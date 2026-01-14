@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Banasthali Gossip 💖</title>
+
+  <link rel="stylesheet" href="style.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Montserrat:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="logo">Banasthali Gossip</div>
+    <ul class="nav-links">
+      <li><a href="#home">Home</a></li>
+      <li><a href="#gossip">Gossips</a></li>
+      <li><a href="#submit">Submit</a></li>
+      <li><a href="#divas">Divas</a></li>
+      <li><a href="#contact">Contact Us</a></li>
+    </ul>
+  </nav>
+
+  <!-- Hero Section -->
+  <section class="hero" id="home">
+    <div class="hero-text">
+      <h1>Welcome to Banasthali Gossip 💖</h1>
+      <p>Share & explore the latest gossip around campus!</p>
+      <button onclick="document.getElementById('submit').scrollIntoView({ behavior: 'smooth' })">
+        Submit Gossip
+      </button>
+    </div>
+  </section>
+
+  <!-- Gossip Feed -->
+  <section class="gossip" id="gossip">
+    <h2>Latest Gossips 💖</h2>
+    <div class="card-container" id="gossipCards"></div>
+
+    <div style="margin-top: 45px; text-align: center;">
+      <a href="gossip.html">
+        <button id="loadMore">View More Gossips 💕</button>
+      </a>
+    </div>
+  </section>
+
+  <!-- Bratz Section (just aesthetic) -->
+  <section class="bratz">
+    <h2>Bratz Energy Only 💄✨</h2>
+    <div class="bratz-row">
+      <img src="img2.jpg" alt="Bratz vibe">
+      <img src="img3.jpg" alt="Bratz vibe">
+      <img src="img5.jpg" alt="Bratz vibe">
+    </div>
+  </section>
+
+  <!-- Submit Gossip -->
+  <section class="submit" id="submit">
+    <h2>Share Your Gossip 💌</h2>
+
+    <form id="gossipForm">
+
+      <input type="text" name="diva_name" placeholder="Diva name (optional)" />
+      <textarea name="content" placeholder="Your gossip... 💖" rows="4" required></textarea>
+
+      <label class="upload-box">
+        Upload photo / video (optional)
+        <input type="file" id="mediaInput" accept="image/*,video/*" name="media">
+      </label>
+
+      <div id="preview"></div>
+
+      <div class="form-buttons">
+        <button type="submit">Post Gossip ✨</button>
+        <button type="button" id="cancelGossip">Cancel ❌</button>
+      </div>
+<button type="button" id="cancelGossip">Cancel</button>
+
+      <p class="anon-text">
+        100% anonymous · No login · No tracking 💅
+      </p>
+    </form>
+  </section>
+
+  <!-- Divas Section -->
+  <section class="divas" id="divas">
+    <h2>Our College Divas 💖</h2>
+    <div class="divas-card">
+      <p>
+        Every girl at Banasthali is a diva in her own universe 💅✨  
+        Confidence in her walk, sparkle in her eyes, and drama only when required 💖  
+        From hostel corridors to campus paths — these queens rule silently 👑  
+        <br><br>
+        <span>Main character energy. Always.</span>
+      </p>
+    </div>
+  </section>
+
+  <!-- Contact Us Section -->
+  <section class="contact-us" id="contact">
+    <h2>Contact Us 💌</h2>
+    <form id="contactForm">
+      <input type="text" name="name" placeholder="Your Name" required>
+      <input type="email" name="email" placeholder="Your Email" required>
+      <textarea name="message" placeholder="Your Message..." rows="4" required></textarea>
+      <button type="submit">Send Message 💖</button>
+    </form>
+  </section>
+
+  <footer>
+    <p>&copy; 2026 Banasthali Gossip Hub 💖</p>
+  </footer>
+
+  <!-- JS -->
+  <script src="script.js"></script>
+  <script>
+    // Cancel button in gossip form
+    const cancelBtn = document.getElementById("cancelGossip");
+    const gossipForm = document.getElementById("gossipForm");
+    const preview = document.getElementById("preview");
+
+    cancelBtn.addEventListener("click", () => {
+      gossipForm.reset();
+      preview.innerHTML = "";
+    });
+  </script>
+
+</body>
+</html>
