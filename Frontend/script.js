@@ -1,3 +1,9 @@
+// ====== API BASE URL (LOCAL + LIVE AUTO) ======
+const API_BASE =
+  location.hostname === "localhost"
+    ? "http://localhost:3000"
+    : "https://gg-qrk5.onrender.com"; // 👈 apna backend URL
+
 // ====== GOSSIP PREVIEW FOR UPLOAD ======
 const mediaInput = document.getElementById("mediaInput");
 const preview = document.getElementById("preview");
@@ -24,32 +30,29 @@ if (mediaInput) {
   });
 }
 
-// ====== FETCH LATEST GOSSIPS FOR HOME PAGE ======
+// ====== FETCH LATEST GOSSIPS ======
 const gossipContainer = document.getElementById("gossipCards");
 
 async function loadLatestGossips() {
-  if (!gossipContainer) return; // Skip if container not on this page
+  if (!gossipContainer) return;
 
   try {
-    const res = await fetch("http://localhost:3000/gossips/latest");
+    const res = await fetch(`${API_BASE}/gossips/latest`);
     const gossips = await res.json();
 
-    gossipContainer.innerHTML = ""; // Clear old content
+    gossipContainer.innerHTML = "";
 
-    gossips.forEach(gossip => {
+    gossips.forEach((gossip) => {
       const card = document.createElement("div");
       card.classList.add("card");
 
-      // Handle media (image/video)
       let mediaHTML = "";
       if (gossip.media_path) {
         if (gossip.media_path.endsWith(".mp4")) {
-          mediaHTML = `<video src="http://localhost:3000${gossip.media_path}" controls></video>`;
+          mediaHTML = `<video src="${API_BASE}${gossip.media_path}" controls></video>`;
         } else {
-          mediaHTML = `<img src="http://localhost:3000${gossip.media_path}" alt="Gossip Image">`;
+          mediaHTML = `<img src="${API_BASE}${gossip.media_path}" alt="Gossip Image">`;
         }
-      } else {
-        mediaHTML = ""; // no static fallback, optional media
       }
 
       card.innerHTML = `
@@ -68,10 +71,9 @@ async function loadLatestGossips() {
   }
 }
 
-// Load latest gossips on page load
 loadLatestGossips();
 
-// ====== SUBMIT GOSSIP FORM ======
+// ====== SUBMIT GOSSIP ======
 const gossipForm = document.getElementById("gossipForm");
 
 if (gossipForm) {
@@ -79,7 +81,6 @@ if (gossipForm) {
     e.preventDefault();
 
     const formData = new FormData(gossipForm);
-    const diva_name = formData.get("diva_name");
     const content = formData.get("content");
 
     if (!content.trim()) {
@@ -88,7 +89,7 @@ if (gossipForm) {
     }
 
     try {
-      const res = await fetch("http://localhost:3000/gossips", {
+      const res = await fetch(`${API_BASE}/gossips`, {
         method: "POST",
         body: formData,
       });
@@ -99,43 +100,51 @@ if (gossipForm) {
         alert("Gossip posted successfully! 💌");
         gossipForm.reset();
         preview.innerHTML = "";
-        loadLatestGossips(); // Refresh latest gossips
+        loadLatestGossips();
       } else {
         alert("Failed to post gossip 💔");
       }
     } catch (err) {
-      console.error("Error posting gossip:", err);
+      console.error(err);
       alert("Error posting gossip 💔");
     }
   });
 }
+
+// ====== CONTACT FORM ======
 const contactForm = document.getElementById("contactForm");
-contactForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
 
-  const formData = new FormData(contactForm);
-  const data = Object.fromEntries(formData.entries());
+if (contactForm) {
+  contactForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
 
-  try {
-    const res = await fetch("http://localhost:3000/contact", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
-    const result = await res.json();
+    const formData = new FormData(contactForm);
+    const data = Object.fromEntries(formData.entries());
 
-    if (result.success) {
-      alert("Message sent! 💌");
-      contactForm.reset();
-    } else {
-      alert(result.error || "Failed to send message 💔");
+    try {
+      const res = await fetch(`${API_BASE}/contact`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+
+      const result = await res.json();
+
+      if (result.success) {
+        alert("Message sent! 💌");
+        contactForm.reset();
+      } else {
+        alert(result.error || "Failed to send message 💔");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error sending message 💔");
     }
-  } catch (err) {
-    console.error(err);
-    alert("Error sending message 💔");
-  }
-});
-document.getElementById("cancelGossip").addEventListener("click", () => {
-  document.getElementById("gossipForm").reset();
-  document.getElementById("preview").innerHTML = "";
+  });
+}
+
+// ====== CANCEL GOSSIP ======
+document.getElementById("cancelGossip")?.addEventListener("click", () => {
+  gossipForm.reset();
+  preview.innerHTML = "";
 });

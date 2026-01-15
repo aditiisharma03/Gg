@@ -1,5 +1,10 @@
-// ====== ALL GOSSIPS PAGE SCRIPT ======
+// ====== API BASE URL (LOCAL + LIVE AUTO) ======
+const API_BASE =
+  location.hostname === "localhost"
+    ? "http://localhost:3000"
+    : "https://gg-qrk5.onrender.com"; // 👈 apna backend URL
 
+// ====== ALL GOSSIPS PAGE SCRIPT ======
 const allGossipsContainer = document.getElementById("allGossips");
 const loadMoreBtn = document.getElementById("loadMore");
 
@@ -10,39 +15,36 @@ const perPage = 6;
 // Fetch all gossips from backend
 async function fetchAllGossips() {
   try {
-    const res = await fetch("http://localhost:3000/gossips");
+    const res = await fetch(`${API_BASE}/gossips`);
     if (!res.ok) throw new Error("Network response was not ok");
+
     gossipsData = await res.json();
     displayed = 0;
     allGossipsContainer.innerHTML = "";
-    loadMoreGossips(); // Load first batch
+    loadMoreGossips(); // first batch
   } catch (err) {
     console.error("Failed to fetch gossips:", err);
     allGossipsContainer.innerHTML = "<p>Failed to load gossips 💔</p>";
-    loadMoreBtn.style.display = "none";
+    if (loadMoreBtn) loadMoreBtn.style.display = "none";
   }
 }
 
-// Load next batch of gossips
+// Load next batch
 function loadMoreGossips() {
   const next = gossipsData.slice(displayed, displayed + perPage);
 
-  next.forEach(gossip => {
+  next.forEach((gossip) => {
     const card = document.createElement("div");
     card.classList.add("card");
 
-    // Handle media (image/video)
     let mediaHTML = "";
     if (gossip.media_path) {
-      // Prepend backend URL to media path
-      const mediaURL = `http://localhost:3000${gossip.media_path}`;
+      const mediaURL = `${API_BASE}${gossip.media_path}`;
       if (gossip.media_path.endsWith(".mp4")) {
         mediaHTML = `<video src="${mediaURL}" controls></video>`;
       } else {
         mediaHTML = `<img src="${mediaURL}" alt="Gossip Image">`;
       }
-    } else {
-      mediaHTML = ""; // no default image
     }
 
     card.innerHTML = `
@@ -58,16 +60,20 @@ function loadMoreGossips() {
 
   displayed += next.length;
 
-  // Hide button if all gossips loaded
+  // Show / hide Load More button
   if (displayed >= gossipsData.length) {
-    loadMoreBtn.style.display = "none";
+    if (loadMoreBtn) loadMoreBtn.style.display = "none";
   } else {
-    loadMoreBtn.style.display = "block";
+    if (loadMoreBtn) loadMoreBtn.style.display = "block";
   }
 }
 
-// Event listener for Load More button
-if (loadMoreBtn) loadMoreBtn.addEventListener("click", loadMoreGossips);
+// Load more button click
+if (loadMoreBtn) {
+  loadMoreBtn.addEventListener("click", loadMoreGossips);
+}
 
-// Fetch gossips when page loads
-if (allGossipsContainer) fetchAllGossips();
+// Initial load
+if (allGossipsContainer) {
+  fetchAllGossips();
+}
