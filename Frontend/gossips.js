@@ -14,7 +14,7 @@ viewMoreBtn.classList.add("view-more-btn");
 
 // ====== STATE ======
 let gossipsData = [];
-let expanded = false; // 👈 IMPORTANT
+let expanded = false; // prevent double render
 const INITIAL_COUNT = 6;
 
 // ====== FETCH ALL GOSSIPS ======
@@ -24,7 +24,7 @@ async function fetchAllGossips() {
     if (!res.ok) throw new Error("Failed to fetch");
 
     gossipsData = await res.json();
-    console.log("TOTAL GOSSIPS:", gossipsData.length); // debug proof
+    console.log("TOTAL GOSSIPS:", gossipsData.length);
 
     allGossipsContainer.innerHTML = "";
     expanded = false;
@@ -32,7 +32,7 @@ async function fetchAllGossips() {
     // Render first 6
     renderGossips(gossipsData.slice(0, INITIAL_COUNT));
 
-    // Add button only if needed
+    // Show "View More" if needed
     if (gossipsData.length > INITIAL_COUNT) {
       viewMoreBtn.style.display = "block";
       allGossipsContainer.after(viewMoreBtn);
@@ -60,11 +60,30 @@ function renderGossips(gossips) {
         : `<img src="${mediaURL}" alt="Gossip Image">`;
     }
 
+    // Card HTML with reactions + comments
     card.innerHTML = `
       ${mediaHTML}
       <div class="card-content">
         <h3>${gossip.diva_name || "Anonymous"}</h3>
         <p>${gossip.content}</p>
+
+        <!-- Emoji Reactions -->
+        <div class="reactions">
+          <span onclick="react(${gossip.id}, '❤️')">❤️ <span id="r-${gossip.id}-❤️">0</span></span>
+          <span onclick="react(${gossip.id}, '😂')">😂 <span id="r-${gossip.id}-😂">0</span></span>
+          <span onclick="react(${gossip.id}, '😮')">😮 <span id="r-${gossip.id}-😮">0</span></span>
+          <span onclick="react(${gossip.id}, '😡')">😡 <span id="r-${gossip.id}-😡">0</span></span>
+        </div>
+
+        <!-- Comments -->
+        <div class="comments">
+          <div class="comment-list" id="comments-${gossip.id}"></div>
+          <input
+            type="text"
+            placeholder="Add a comment 💬"
+            onkeypress="addComment(event, ${gossip.id})"
+          />
+        </div>
       </div>
     `;
 
@@ -74,12 +93,38 @@ function renderGossips(gossips) {
 
 // ====== VIEW MORE CLICK ======
 viewMoreBtn.addEventListener("click", () => {
-  if (expanded) return; // 👈 prevent double render
+  if (expanded) return;
 
   renderGossips(gossipsData.slice(INITIAL_COUNT));
   expanded = true;
   viewMoreBtn.style.display = "none";
 });
+
+// ====== EMOJI REACTIONS (FRONTEND ONLY) ======
+function react(gossipId, emoji) {
+  const counter = document.getElementById(`r-${gossipId}-${emoji}`);
+  if (!counter) return;
+
+  counter.innerText = parseInt(counter.innerText) + 1;
+}
+
+// ====== COMMENTS (FRONTEND ONLY) ======
+function addComment(event, gossipId) {
+  if (event.key !== "Enter") return;
+
+  const input = event.target;
+  const text = input.value.trim();
+  if (!text) return;
+
+  const commentList = document.getElementById(`comments-${gossipId}`);
+
+  const comment = document.createElement("div");
+  comment.classList.add("comment");
+  comment.innerText = text;
+
+  commentList.appendChild(comment);
+  input.value = "";
+}
 
 // ====== INIT ======
 if (allGossipsContainer) {

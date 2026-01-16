@@ -2,7 +2,7 @@
 const API_BASE =
   location.hostname === "localhost"
     ? "http://localhost:3000"
-    : "https://gg-qrk5.onrender.com"; // 👈 apna backend URL
+    : "https://gg-qrk5.onrender.com";
 
 // ====== GOSSIP PREVIEW FOR UPLOAD ======
 const mediaInput = document.getElementById("mediaInput");
@@ -19,7 +19,6 @@ if (mediaInput) {
     if (file.type.startsWith("image")) {
       const img = document.createElement("img");
       img.src = url;
-      img.alt = "Preview Image";
       preview.appendChild(img);
     } else if (file.type.startsWith("video")) {
       const video = document.createElement("video");
@@ -48,11 +47,10 @@ async function loadLatestGossips() {
 
       let mediaHTML = "";
       if (gossip.media_path) {
-        if (gossip.media_path.endsWith(".mp4")) {
-          mediaHTML = `<video src="${API_BASE}${gossip.media_path}" controls></video>`;
-        } else {
-          mediaHTML = `<img src="${API_BASE}${gossip.media_path}" alt="Gossip Image">`;
-        }
+        const mediaURL = `${API_BASE}${gossip.media_path}`;
+        mediaHTML = gossip.media_path.endsWith(".mp4")
+          ? `<video src="${mediaURL}" controls></video>`
+          : `<img src="${mediaURL}" alt="Gossip Image">`;
       }
 
       card.innerHTML = `
@@ -60,6 +58,24 @@ async function loadLatestGossips() {
         <div class="card-content">
           <h3>${gossip.diva_name || "Anonymous"}</h3>
           <p>${gossip.content}</p>
+
+          <!-- Emoji Reactions -->
+          <div class="reactions">
+            <span onclick="react(${gossip.id}, '❤️')">❤️ <span id="r-${gossip.id}-❤️">0</span></span>
+            <span onclick="react(${gossip.id}, '😂')">😂 <span id="r-${gossip.id}-😂">0</span></span>
+            <span onclick="react(${gossip.id}, '😮')">😮 <span id="r-${gossip.id}-😮">0</span></span>
+            <span onclick="react(${gossip.id}, '😡')">😡 <span id="r-${gossip.id}-😡">0</span></span>
+          </div>
+
+          <!-- Comments -->
+          <div class="comments">
+            <div class="comment-list" id="comments-${gossip.id}"></div>
+            <input
+              type="text"
+              placeholder="Add a comment 💬"
+              onkeypress="addComment(event, ${gossip.id})"
+            />
+          </div>
         </div>
       `;
 
@@ -72,6 +88,32 @@ async function loadLatestGossips() {
 }
 
 loadLatestGossips();
+
+// ====== EMOJI REACTIONS (FRONTEND ONLY) ======
+function react(gossipId, emoji) {
+  const counter = document.getElementById(`r-${gossipId}-${emoji}`);
+  if (!counter) return;
+
+  counter.innerText = parseInt(counter.innerText) + 1;
+}
+
+// ====== COMMENTS (FRONTEND ONLY) ======
+function addComment(event, gossipId) {
+  if (event.key !== "Enter") return;
+
+  const input = event.target;
+  const text = input.value.trim();
+  if (!text) return;
+
+  const commentList = document.getElementById(`comments-${gossipId}`);
+
+  const comment = document.createElement("div");
+  comment.classList.add("comment");
+  comment.innerText = text;
+
+  commentList.appendChild(comment);
+  input.value = "";
+}
 
 // ====== SUBMIT GOSSIP ======
 const gossipForm = document.getElementById("gossipForm");

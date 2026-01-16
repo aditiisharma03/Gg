@@ -19,6 +19,7 @@ app.get("/", (req, res) => {
   res.send("Gossip Backend is running 💖");
 });
 
+// ===== GOSSIPS =====
 app.get("/gossips/latest", async (req, res) => {
   try {
     const [rows] = await db.promise().query(
@@ -65,6 +66,15 @@ app.post("/gossips", async (req, res) => {
       [diva_name || "Anonymous", content, media_path]
     );
 
+    // Initialize reactions for this gossip
+    const emojis = ["❤️", "😂", "😮", "😡"];
+    for (let emoji of emojis) {
+      await db.promise().query(
+        "INSERT INTO gossip_reactions (gossip_id, emoji, count) VALUES (?, ?, 0)",
+        [result.insertId, emoji]
+      );
+    }
+
     res.json({ success: true, id: result.insertId });
   } catch (err) {
     console.error(err);
@@ -72,7 +82,77 @@ app.post("/gossips", async (req, res) => {
   }
 });
 
-// CONTACT ROUTE
+// ===== COMMENTS =====
+app.get("/gossips/:id/comments", async (req, res) => {
+  const gossipId = req.params.id;
+  try {
+    const [rows] = await db.promise().query(
+      "SELECT * FROM gossip_comments WHERE gossip_id = ? ORDER BY created_at ASC",
+      [gossipId]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch comments" });
+  }
+});
+
+app.post("/gossips/:id/comments", async (req, res) => {
+  const gossipId = req.params.id;
+  const { commenter_name, comment } = req.body;
+
+  if (!comment || !comment.trim()) {
+    return res.status(400).json({ error: "Comment cannot be empty" });
+  }
+
+  try {
+    const [result] = await db.promise().query(
+      "INSERT INTO gossip_comments (gossip_id, commenter_name, comment, created_at) VALUES (?, ?, ?, NOW())",
+      [gossipId, commenter_name || "Anonymous", comment]
+    );
+    res.json({ success: true, id: result.insertId });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to post comment" });
+  }
+});
+
+// ===== REACTIONS =====
+app.get("/gossips/:id/reactions", async (req, res) => {
+  const gossipId = req.params.id;
+  try {
+    const [rows] = await db.promise().query(
+      "SELECT emoji, count FROM gossip_reactions WHERE gossip_id = ?",
+      [gossipId]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch reactions" });
+  }
+});
+
+app.post("/gossips/:id/reactions", async (req, res) => {
+  const gossipId = req.params.id;
+  const { emoji } = req.body;
+
+  if (!emoji) {
+    return res.status(400).json({ error: "Emoji is required" });
+  }
+
+  try {
+    await db.promise().query(
+      "UPDATE gossip_reactions SET count = count + 1 WHERE gossip_id = ? AND emoji = ?",
+      [gossipId, emoji]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to update reaction" });
+  }
+});
+
+// ===== CONTACT =====
 app.post("/contact", async (req, res) => {
   try {
     const { name, email, message } = req.body;
