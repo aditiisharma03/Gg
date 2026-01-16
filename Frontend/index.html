@@ -39,11 +39,13 @@
     <div class="card-container" id="gossipCards"></div>
 
     <div style="margin-top: 45px; text-align: center;">
-      <button id="loadMore">View More Gossips 💕</button>
+      <a href="gossip.html">
+        <button id="loadMore">View More Gossips 💕</button>
+      </a>
     </div>
   </section>
 
-  <!-- Bratz Section -->
+  <!-- Bratz Section (just aesthetic) -->
   <section class="bratz">
     <h2>Bratz Energy Only 💄✨</h2>
     <div class="bratz-row">
@@ -56,19 +58,27 @@
   <!-- Submit Gossip -->
   <section class="submit" id="submit">
     <h2>Share Your Gossip 💌</h2>
+
     <form id="gossipForm">
+
       <input type="text" name="diva_name" placeholder="Diva name (optional)" />
       <textarea name="content" placeholder="Your gossip... 💖" rows="4" required></textarea>
+
       <label class="upload-box">
         Upload photo / video (optional)
         <input type="file" id="mediaInput" accept="image/*,video/*" name="media">
       </label>
+
       <div id="preview"></div>
+
       <div class="form-buttons">
         <button type="submit">Post Gossip ✨</button>
         <button type="button" id="cancelGossip">Cancel ❌</button>
       </div>
-      <p class="anon-text">100% anonymous · No login · No tracking 💅</p>
+
+      <p class="anon-text">
+        100% anonymous · No login · No tracking 💅
+      </p>
     </form>
   </section>
 
@@ -104,7 +114,7 @@
   <!-- JS -->
   <script src="script.js"></script>
   <script>
-    // Cancel gossip form
+    // Cancel button in gossip form
     const cancelBtn = document.getElementById("cancelGossip");
     const gossipForm = document.getElementById("gossipForm");
     const preview = document.getElementById("preview");

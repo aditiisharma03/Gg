@@ -208,3 +208,7 @@ body {
     height: auto;
   }
 }
+/* ====== HIDE READ MORE / READ LESS IN GOSSIP CARDS ONLY ====== */
+.card-content .read-more {
+    display: none !important;
+}

@@ -8,6 +8,7 @@ const API_BASE =
 const gossipContainer = document.getElementById("gossipCards");
 const gossipForm = document.getElementById("gossipForm");
 const preview = document.getElementById("preview");
+const loadMoreBtn = document.getElementById("loadMoreGossips");
 
 // ====== REACTION STATE (PERSISTENT) ======
 const reacted = JSON.parse(localStorage.getItem("reacted")) || {};
@@ -35,16 +36,29 @@ if (mediaInput) {
   });
 }
 
-// ====== LOAD LATEST GOSSIPS ======
-async function loadLatestGossips() {
+// ====== GOSSIP LOAD STATE ======
+let displayed = 0;
+const BATCH_SIZE = 3;
+let allGossips = [];
+
+// ====== LOAD GOSSIPS ======
+async function loadGossips(initial = false) {
   if (!gossipContainer) return;
 
   try {
-    const res = await fetch(`${API_BASE}/gossips/latest`);
-    const gossips = await res.json();
-    gossipContainer.innerHTML = "";
+    if (initial) {
+      // Fetch all gossips once
+      const res = await fetch(`${API_BASE}/gossips`);
+      allGossips = await res.json();
+      gossipContainer.innerHTML = "";
+      displayed = 0;
+    }
 
-    gossips.forEach(gossip => {
+    // Get next batch
+    const nextBatch = allGossips.slice(displayed, displayed + BATCH_SIZE);
+    displayed += nextBatch.length;
+
+    nextBatch.forEach(gossip => {
       reacted[gossip.id] = reacted[gossip.id] || {};
 
       const card = document.createElement("div");
@@ -91,6 +105,11 @@ async function loadLatestGossips() {
       loadComments(gossip.id, 2);
     });
 
+    // Show/hide "View More" button
+    if (loadMoreBtn) {
+      loadMoreBtn.style.display = displayed < allGossips.length ? "block" : "none";
+    }
+
   } catch (err) {
     console.error(err);
     gossipContainer.innerHTML = "<p>Failed to load gossips 💔</p>";
@@ -102,7 +121,6 @@ async function loadReactions(gossipId) {
   try {
     const res = await fetch(`${API_BASE}/gossips/${gossipId}/reactions`);
     const data = await res.json();
-
     data.forEach(r => {
       const el = document.getElementById(`r-${gossipId}-${r.emoji}`);
       if (el) el.innerText = r.count;
@@ -180,7 +198,7 @@ function editPost(gossipId) {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ content: updated }),
-  }).then(loadLatestGossips);
+  }).then(() => loadGossips(true));
 }
 
 // ====== SUBMIT GOSSIP ======
@@ -198,11 +216,16 @@ if (gossipForm) {
     if (result.success) {
       gossipForm.reset();
       preview.innerHTML = "";
-      loadLatestGossips();
+      loadGossips(true);
       alert("Gossip posted 💖");
     }
   });
 }
 
 // ====== INIT ======
-if (gossipContainer) loadLatestGossips();
+if (gossipContainer) loadGossips(true);
+
+// ====== LOAD MORE BUTTON ======
+if (loadMoreBtn) {
+  loadMoreBtn.addEventListener("click", () => loadGossips());
+}

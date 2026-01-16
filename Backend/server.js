@@ -118,20 +118,23 @@ app.get("/gossips/:id/comments", async (req, res) => {
 app.post("/gossips/:id/comments", async (req, res) => {
   try {
     const gossipId = req.params.id;
-    const { commenter_name, comment, parent_comment_id } = req.body;
+    const { commenter_name, comment } = req.body; // remove parent_comment_id
 
-    if (!comment?.trim()) return res.status(400).json({ error: "Comment required" });
+    if (!comment?.trim()) 
+      return res.status(400).json({ error: "Comment required" });
 
     const [result] = await db.promise().query(
-      "INSERT INTO gossip_comments (gossip_id, commenter_name, comment, parent_comment_id, created_at) VALUES (?, ?, ?, ?, NOW())",
-      [gossipId, commenter_name || "Anonymous", comment, parent_comment_id || null]
+      "INSERT INTO gossip_comments (gossip_id, commenter_name, comment, created_at) VALUES (?, ?, ?, NOW())",
+      [gossipId, commenter_name || "Anonymous", comment]
     );
+
     res.json({ success: true, id: result.insertId });
   } catch (err) {
-    console.error(err);
+    console.error("Comment Error:", err);  // Check server logs
     res.status(500).json({ error: "Failed to post comment" });
   }
 });
+
 
 app.put("/gossips/:gossipId/comments/:commentId", async (req, res) => {
   try {

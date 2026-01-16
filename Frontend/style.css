@@ -114,8 +114,6 @@ body {
   overflow: hidden;
   box-shadow: 0 12px 28px rgba(0,0,0,0.12);
   transition: 0.4s;
-  display: flex;
-  flex-direction: column;
 }
 
 .card:hover {
@@ -123,127 +121,22 @@ body {
   box-shadow: 0 18px 35px rgba(255,102,178,0.35);
 }
 
-.card img,
-.card video {
+.card img {
   width: 100%;
-  max-height: 180px;
+  height: 170px;
   object-fit: cover;
-}
-
-.card-content {
-  padding: 15px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  flex-grow: 1;
 }
 
 .card h3 {
   color: #ff3399;
+  margin: 15px;
   font-size: 16px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
 }
 
 .card p {
+  margin: 0 15px 18px;
   font-size: 14px;
   color: #555;
-}
-
-/* ========== EDIT POST (3 DOTS) ========== */
-.edit-post {
-  cursor: pointer;
-  font-size: 20px;
-  color: #ff3399;
-  transition: color 0.3s;
-}
-
-.edit-post:hover {
-  color: #ff66b2;
-}
-
-/* ========== REACTIONS ========== */
-.reactions {
-  display: flex;
-  gap: 10px;
-  margin: 8px 0;
-  font-size: 16px;
-}
-
-.reactions span {
-  cursor: pointer;
-  transition: transform 0.2s;
-}
-
-.reactions span:hover {
-  transform: scale(1.2);
-}
-
-/* ========== COMMENTS ========== */
-.comments {
-  margin-top: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.comment-list .comment {
-  background: #fff0f5;
-  padding: 6px 10px;
-  border-radius: 14px;
-  margin-bottom: 4px;
-  font-size: 13px;
-}
-
-.comment-actions {
-  display: flex;
-  gap: 6px;
-  margin-top: 4px;
-}
-
-.comment-actions button {
-  background: transparent;
-  border: none;
-  color: #ff3399;
-  cursor: pointer;
-  font-size: 12px;
-  transition: 0.2s;
-}
-
-.comment-actions button:hover {
-  color: #ff66b2;
-  transform: translateY(-1px);
-}
-
-.comment-input {
-  display: flex;
-  gap: 6px;
-  margin-top: 6px;
-}
-
-.comment-input input {
-  flex: 1;
-  padding: 6px 10px;
-  border-radius: 14px;
-  border: 1px solid #ff66b2;
-  font-size: 13px;
-}
-
-.comment-input button {
-  padding: 6px 12px;
-  border-radius: 14px;
-  border: none;
-  background: #ff66b2;
-  color: #fff;
-  cursor: pointer;
-  font-size: 13px;
-  transition: 0.2s;
-}
-
-.comment-input button:hover {
-  background: #ff3399;
-  transform: translateY(-1px);
 }
 
 /* ========== VIEW MORE BUTTON ========== */
@@ -367,53 +260,6 @@ body {
   box-shadow: 0 16px 32px rgba(255,102,178,0.5);
 }
 
-.submit .upload-box {
-  background: #ffe6f0;
-  padding: 14px;
-  border-radius: 18px;
-  cursor: pointer;
-  font-size: 14px;
-  color: #ff3399;
-  font-weight: 500;
-  border: 2px dashed #ff66b2;
-  transition: 0.3s;
-}
-
-.submit .upload-box:hover {
-  background: #ffd6eb;
-  transform: scale(1.02);
-}
-
-.submit .upload-box input {
-  display: none;
-}
-
-#preview {
-  margin-top: 12px;
-}
-
-#preview img,
-#preview video {
-  width: 100%;
-  max-height: 260px;
-  border-radius: 22px;
-  object-fit: cover;
-  box-shadow: 0 14px 30px rgba(255,102,178,0.4);
-  animation: fadeIn 0.4s ease;
-}
-
-.anon-text {
-  font-size: 12px;
-  color: #888;
-  margin-top: 6px;
-  letter-spacing: 0.3px;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
 /* ========== DIVAS SECTION ========== */
 .divas {
   padding: 90px 20px;
@@ -465,15 +311,63 @@ footer {
     padding: 35px;
   }
 
+  /* Center view more on mobile */
   #loadMore {
     width: 80%;
     margin: 20px auto 0 auto;
   }
 }
 
+/* ========== SUBMIT ADD-ONS (ANONYMOUS + MEDIA) ========== */
+.submit .upload-box {
+  background: #ffe6f0;
+  padding: 14px;
+  border-radius: 18px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #ff3399;
+  font-weight: 500;
+  border: 2px dashed #ff66b2;
+  transition: 0.3s;
+}
+
+.submit .upload-box:hover {
+  background: #ffd6eb;
+  transform: scale(1.02);
+}
+
+.submit .upload-box input {
+  display: none;
+}
+
+#preview {
+  margin-top: 12px;
+}
+
+#preview img,
+#preview video {
+  width: 100%;
+  max-height: 260px;
+  border-radius: 22px;
+  object-fit: cover;
+  box-shadow: 0 14px 30px rgba(255,102,178,0.4);
+  animation: fadeIn 0.4s ease;
+}
+
+.anon-text {
+  font-size: 12px;
+  color: #888;
+  margin-top: 6px;
+  letter-spacing: 0.3px;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 /* ================= Contact Us Section ================= */
 .contact-us {
-  background-color: #fff5f8;
+  background-color: #fff5f8; /* soft pink background */
   padding: 50px 20px;
   text-align: center;
   margin-top: 60px;
@@ -515,7 +409,7 @@ footer {
 }
 
 .contact-us textarea {
-  min-height: 120px;
+  min-height: 120px; /* fixed typo, now properly set */
 }
 
 .contact-us button {
@@ -535,7 +429,7 @@ footer {
   transform: translateY(-2px);
 }
 
-/* Optional cancel button style */
+/* Optional: Add cancel button style */
 .contact-us .cancel-btn {
   background-color: #ccc;
   color: #333;
