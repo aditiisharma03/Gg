@@ -1,13 +1,19 @@
-// ====== API BASE URL ======
+// ====== API BASE URL (LOCAL + LIVE AUTO) ======
 const API_BASE =
   location.hostname === "localhost"
     ? "http://localhost:3000"
     : "https://gg-qrk5.onrender.com";
 
-// ====== GOSSIP PREVIEW FOR UPLOAD ======
-const mediaInput = document.getElementById("mediaInput");
+// ====== ELEMENTS ======
+const gossipContainer = document.getElementById("gossipCards");
+const gossipForm = document.getElementById("gossipForm");
 const preview = document.getElementById("preview");
 
+// ====== REACTION STATE (PERSISTENT) ======
+const reacted = JSON.parse(localStorage.getItem("reacted")) || {};
+
+// ====== GOSSIP PREVIEW ======
+const mediaInput = document.getElementById("mediaInput");
 if (mediaInput) {
   mediaInput.addEventListener("change", () => {
     preview.innerHTML = "";
@@ -29,23 +35,17 @@ if (mediaInput) {
   });
 }
 
-// ====== FETCH LATEST GOSSIPS ======
-const gossipContainer = document.getElementById("gossipCards");
-
-// Track toggled reactions locally per gossip for frontend
-const toggledReactions = {}; // { gossipId: { '❤️': true/false, ... } }
-
+// ====== LOAD LATEST GOSSIPS ======
 async function loadLatestGossips() {
   if (!gossipContainer) return;
 
   try {
     const res = await fetch(`${API_BASE}/gossips/latest`);
     const gossips = await res.json();
-
     gossipContainer.innerHTML = "";
 
-    gossips.forEach((gossip) => {
-      toggledReactions[gossip.id] = toggledReactions[gossip.id] || {};
+    gossips.forEach(gossip => {
+      reacted[gossip.id] = reacted[gossip.id] || {};
 
       const card = document.createElement("div");
       card.classList.add("card");
@@ -61,24 +61,25 @@ async function loadLatestGossips() {
       card.innerHTML = `
         ${mediaHTML}
         <div class="card-content">
-          <h3>${gossip.diva_name || "Anonymous"}</h3>
-          <p>${gossip.content}</p>
+          <h3>
+            ${gossip.diva_name || "Anonymous"}
+            <span class="edit-post" onclick="editPost(${gossip.id})">⋮</span>
+          </h3>
 
-          <!-- Emoji Reactions -->
-          <div class="reactions" id="reactions-${gossip.id}">
-            ${["❤️", "😂", "😮", "😡"].map(
-              (emoji) => `
-                <span onclick="toggleReaction(${gossip.id}, '${emoji}')" style="cursor:pointer;">
-                  ${emoji} <span id="r-${gossip.id}-${emoji}">0</span>
-                </span>`
-            ).join("")}
+          <p id="post-content-${gossip.id}">${gossip.content}</p>
+
+          <div class="reactions">
+            ${["❤️","😂","😮","😡"].map(emoji => `
+              <span onclick="toggleReaction(${gossip.id}, '${emoji}')">
+                ${emoji} <span id="r-${gossip.id}-${emoji}">0</span>
+              </span>
+            `).join("")}
           </div>
 
-          <!-- Comments -->
           <div class="comments">
-            <div class="comment-list" id="comments-${gossip.id}" style="display:flex; flex-direction:column-reverse;"></div>
+            <div class="comment-list" id="comments-${gossip.id}" style="display:flex;flex-direction:column-reverse"></div>
             <div class="comment-input">
-              <input type="text" id="input-${gossip.id}" placeholder="Add a comment 💬" />
+              <input type="text" id="input-${gossip.id}" placeholder="Add a comment 💬">
               <button onclick="postComment(${gossip.id})">Post</button>
             </div>
           </div>
@@ -86,18 +87,15 @@ async function loadLatestGossips() {
       `;
 
       gossipContainer.appendChild(card);
-
-      // Load reactions and comments from backend
       loadReactions(gossip.id);
-      loadComments(gossip.id);
+      loadComments(gossip.id, 2);
     });
+
   } catch (err) {
-    console.error("Failed to load gossips:", err);
+    console.error(err);
     gossipContainer.innerHTML = "<p>Failed to load gossips 💔</p>";
   }
 }
-
-loadLatestGossips();
 
 // ====== REACTIONS ======
 async function loadReactions(gossipId) {
@@ -105,50 +103,54 @@ async function loadReactions(gossipId) {
     const res = await fetch(`${API_BASE}/gossips/${gossipId}/reactions`);
     const data = await res.json();
 
-    data.forEach((r) => {
-      const counter = document.getElementById(`r-${gossipId}-${r.emoji}`);
-      if (counter) counter.innerText = r.count;
+    data.forEach(r => {
+      const el = document.getElementById(`r-${gossipId}-${r.emoji}`);
+      if (el) el.innerText = r.count;
     });
   } catch (err) {
-    console.error("Failed to load reactions:", err);
+    console.error(err);
   }
 }
 
 async function toggleReaction(gossipId, emoji) {
-  try {
-    // Determine if user already reacted
-    const hasReacted = toggledReactions[gossipId][emoji] || false;
-    toggledReactions[gossipId][emoji] = !hasReacted;
+  reacted[gossipId] = reacted[gossipId] || {};
+  const hasReacted = reacted[gossipId][emoji] || false;
 
-    await fetch(`${API_BASE}/gossips/${gossipId}/reactions`, {
+  try {
+    await fetch(`${API_BASE}/gossips/${gossipId}/reactions/toggle`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ emoji, undo: hasReacted }), // send undo flag
+      body: JSON.stringify({
+        emoji,
+        action: hasReacted ? "remove" : "add"
+      }),
     });
 
-    // Refresh counts
+    reacted[gossipId][emoji] = !hasReacted;
+    localStorage.setItem("reacted", JSON.stringify(reacted));
+
     loadReactions(gossipId);
   } catch (err) {
-    console.error("Failed to update reaction:", err);
+    console.error("Reaction error:", err);
   }
 }
 
 // ====== COMMENTS ======
-async function loadComments(gossipId) {
-  try {
-    const res = await fetch(`${API_BASE}/gossips/${gossipId}/comments`);
-    const comments = await res.json();
-    const commentList = document.getElementById(`comments-${gossipId}`);
-    commentList.innerHTML = "";
-    comments.forEach((c) => {
-      const comment = document.createElement("div");
-      comment.classList.add("comment");
-      comment.innerHTML = `<strong>${c.commenter_name || "Anonymous"}:</strong> ${c.comment}`;
-      commentList.appendChild(comment);
-    });
-  } catch (err) {
-    console.error("Failed to load comments:", err);
-  }
+async function loadComments(gossipId, limit = null) {
+  const res = await fetch(`${API_BASE}/gossips/${gossipId}/comments`);
+  const comments = await res.json();
+  const list = document.getElementById(`comments-${gossipId}`);
+  list.innerHTML = "";
+
+  let show = comments;
+  if (limit && comments.length > limit) show = comments.slice(-limit);
+
+  show.forEach(c => {
+    const div = document.createElement("div");
+    div.className = "comment";
+    div.innerHTML = `<strong>${c.commenter_name || "Anonymous"}:</strong> ${c.comment}`;
+    list.appendChild(div);
+  });
 }
 
 async function postComment(gossipId) {
@@ -156,94 +158,51 @@ async function postComment(gossipId) {
   const text = input.value.trim();
   if (!text) return;
 
-  const commenterName = prompt("Enter your name:", "Anonymous") || "Anonymous";
+  const name = prompt("Your name:", "Anonymous") || "Anonymous";
 
-  try {
-    await fetch(`${API_BASE}/gossips/${gossipId}/comments`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ commenter_name: commenterName, comment: text }),
-    });
+  await fetch(`${API_BASE}/gossips/${gossipId}/comments`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ commenter_name: name, comment: text }),
+  });
 
-    input.value = "";
-    loadComments(gossipId);
-  } catch (err) {
-    console.error("Failed to add comment:", err);
-  }
+  input.value = "";
+  loadComments(gossipId, 2);
+}
+
+// ====== EDIT POST ======
+function editPost(gossipId) {
+  const current = document.getElementById(`post-content-${gossipId}`).innerText;
+  const updated = prompt("Edit post:", current);
+  if (!updated) return;
+
+  fetch(`${API_BASE}/gossips/${gossipId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content: updated }),
+  }).then(loadLatestGossips);
 }
 
 // ====== SUBMIT GOSSIP ======
-const gossipForm = document.getElementById("gossipForm");
-
 if (gossipForm) {
-  gossipForm.addEventListener("submit", async (e) => {
+  gossipForm.addEventListener("submit", async e => {
     e.preventDefault();
+    const data = new FormData(gossipForm);
 
-    const formData = new FormData(gossipForm);
-    const content = formData.get("content");
+    const res = await fetch(`${API_BASE}/gossips`, {
+      method: "POST",
+      body: data
+    });
 
-    if (!content.trim()) {
-      alert("Please enter your gossip 💖");
-      return;
-    }
-
-    try {
-      const res = await fetch(`${API_BASE}/gossips`, {
-        method: "POST",
-        body: formData,
-      });
-
-      const data = await res.json();
-
-      if (data.success) {
-        alert("Gossip posted successfully! 💌");
-        gossipForm.reset();
-        preview.innerHTML = "";
-        loadLatestGossips();
-      } else {
-        alert("Failed to post gossip 💔");
-      }
-    } catch (err) {
-      console.error(err);
-      alert("Error posting gossip 💔");
+    const result = await res.json();
+    if (result.success) {
+      gossipForm.reset();
+      preview.innerHTML = "";
+      loadLatestGossips();
+      alert("Gossip posted 💖");
     }
   });
 }
 
-// ====== CONTACT FORM ======
-const contactForm = document.getElementById("contactForm");
-
-if (contactForm) {
-  contactForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-
-    const formData = new FormData(contactForm);
-    const data = Object.fromEntries(formData.entries());
-
-    try {
-      const res = await fetch(`${API_BASE}/contact`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-
-      const result = await res.json();
-
-      if (result.success) {
-        alert("Message sent! 💌");
-        contactForm.reset();
-      } else {
-        alert(result.error || "Failed to send message 💔");
-      }
-    } catch (err) {
-      console.error(err);
-      alert("Error sending message 💔");
-    }
-  });
-}
-
-// ====== CANCEL GOSSIP ======
-document.getElementById("cancelGossip")?.addEventListener("click", () => {
-  gossipForm.reset();
-  preview.innerHTML = "";
-});
+// ====== INIT ======
+if (gossipContainer) loadLatestGossips();

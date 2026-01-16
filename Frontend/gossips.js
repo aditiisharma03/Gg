@@ -1,4 +1,4 @@
-// ====== API BASE URL ======
+// ====== API BASE URL (LOCAL + LIVE AUTO) ======
 const API_BASE =
   location.hostname === "localhost"
     ? "http://localhost:3000"
@@ -6,82 +6,82 @@ const API_BASE =
 
 // ====== ELEMENTS ======
 const allGossipsContainer = document.getElementById("allGossips");
+const loadMoreBtn = document.getElementById("loadMore");
 
-// View More button
-const viewMoreBtn = document.createElement("button");
-viewMoreBtn.innerText = "View More Gossips 💖";
-viewMoreBtn.classList.add("view-more-btn");
+// hide button on page load
+if (loadMoreBtn) loadMoreBtn.style.display = "none";
 
 // ====== STATE ======
 let gossipsData = [];
-let expanded = false; // prevent double render
-const INITIAL_COUNT = 6;
+let displayed = 0;
+const perPage = 6;
 
-// Track which emojis have been reacted to (per gossipId)
-const reacted = {}; // e.g., { 1: { "❤️": true, "😂": false } }
+// persistent reactions
+const reacted = JSON.parse(localStorage.getItem("reacted")) || {};
 
 // ====== FETCH ALL GOSSIPS ======
 async function fetchAllGossips() {
   try {
     const res = await fetch(`${API_BASE}/gossips`);
-    if (!res.ok) throw new Error("Failed to fetch");
-
     gossipsData = await res.json();
+
+    displayed = 0;
     allGossipsContainer.innerHTML = "";
-    expanded = false;
 
-    renderGossips(gossipsData.slice(0, INITIAL_COUNT));
-
-    if (gossipsData.length > INITIAL_COUNT) {
-      viewMoreBtn.style.display = "block";
-      allGossipsContainer.after(viewMoreBtn);
-    } else {
-      viewMoreBtn.style.display = "none";
-    }
+    loadMoreGossips();
   } catch (err) {
     console.error(err);
     allGossipsContainer.innerHTML = "<p>Failed to load gossips 💔</p>";
+    if (loadMoreBtn) loadMoreBtn.style.display = "none";
   }
 }
 
-// ====== RENDER GOSSIPS ======
-function renderGossips(gossips) {
-  gossips.forEach((gossip) => {
+// ====== LOAD MORE GOSSIPS ======
+function loadMoreGossips() {
+  const next = gossipsData.slice(displayed, displayed + perPage);
+
+  next.forEach(gossip => {
     reacted[gossip.id] = reacted[gossip.id] || {};
 
     const card = document.createElement("div");
-    card.classList.add("card");
+    card.className = "card";
 
     let mediaHTML = "";
     if (gossip.media_path) {
-      const mediaURL = `${API_BASE}${gossip.media_path}`;
+      const url = `${API_BASE}${gossip.media_path}`;
       mediaHTML = gossip.media_path.endsWith(".mp4")
-        ? `<video src="${mediaURL}" controls></video>`
-        : `<img src="${mediaURL}" alt="Gossip Image">`;
+        ? `<video src="${url}" controls></video>`
+        : `<img src="${url}" />`;
     }
 
     card.innerHTML = `
       ${mediaHTML}
       <div class="card-content">
-        <h3>${gossip.diva_name || "Anonymous"}</h3>
-        <p>${gossip.content}</p>
+        <h3>
+          ${gossip.diva_name || "Anonymous"}
+          <span class="edit-post" onclick="editPost(${gossip.id})">⋮</span>
+        </h3>
 
-        <!-- Emoji Reactions -->
+        <p id="post-content-${gossip.id}" class="post-text collapsed">
+          ${gossip.content}
+        </p>
+
+        <span class="read-more" id="read-more-${gossip.id}" onclick="toggleReadMore(${gossip.id})">
+          Read more
+        </span>
+
         <div class="reactions">
-          ${["❤️", "😂", "😮", "😡"].map(
-            (emoji) => `
-            <span onclick="toggleReaction(${gossip.id}, '${emoji}')" style="cursor:pointer;">
-              ${emoji} <span id="r-${gossip.id}-${emoji}">0</span>
-            </span>
-          `
+          ${["❤️","😂","😮","😡"].map(e =>
+            `<span onclick="toggleReaction(${gossip.id}, '${e}')">
+              ${e} <span id="r-${gossip.id}-${e}">0</span>
+            </span>`
           ).join("")}
         </div>
 
-        <!-- Comments -->
         <div class="comments">
-          <div class="comment-list" id="comments-${gossip.id}" style="display:flex; flex-direction:column-reverse;"></div>
+          <div class="comment-list" id="comments-${gossip.id}" style="display:flex;flex-direction:column-reverse"></div>
           <div class="comment-input">
-            <input type="text" id="input-${gossip.id}" placeholder="Add a comment 💬" />
+            <input id="input-${gossip.id}" placeholder="Add a comment 💬">
             <button onclick="postComment(${gossip.id})">Post</button>
           </div>
         </div>
@@ -89,51 +89,130 @@ function renderGossips(gossips) {
     `;
 
     allGossipsContainer.appendChild(card);
+
+    loadReactions(gossip.id);
+    loadComments(gossip.id, 2);
+
+    setTimeout(() => checkOverflow(gossip.id), 0);
   });
-}
 
-// ====== VIEW MORE CLICK ======
-viewMoreBtn.addEventListener("click", () => {
-  if (expanded) return;
+  displayed += next.length;
 
-  renderGossips(gossipsData.slice(INITIAL_COUNT));
-  expanded = true;
-  viewMoreBtn.style.display = "none";
-});
-
-// ====== TOGGLE REACTION ======
-function toggleReaction(gossipId, emoji) {
-  const counter = document.getElementById(`r-${gossipId}-${emoji}`);
-  if (!counter) return;
-
-  reacted[gossipId][emoji] = !reacted[gossipId][emoji]; // toggle
-
-  if (reacted[gossipId][emoji]) {
-    counter.innerText = parseInt(counter.innerText) + 1;
-  } else {
-    counter.innerText = Math.max(0, parseInt(counter.innerText) - 1);
+  if (loadMoreBtn) {
+    loadMoreBtn.style.display =
+      displayed < gossipsData.length ? "block" : "none";
   }
 }
 
-// ====== POST COMMENT ======
-function postComment(gossipId) {
+// ====== READ MORE / LESS ======
+function checkOverflow(gossipId) {
+  const textEl = document.getElementById(`post-content-${gossipId}`);
+  const btn = document.getElementById(`read-more-${gossipId}`);
+
+  if (textEl.scrollHeight <= textEl.clientHeight + 2) {
+    btn.style.display = "none";
+  } else {
+    btn.style.display = "inline-block";
+  }
+}
+
+function toggleReadMore(gossipId) {
+  const textEl = document.getElementById(`post-content-${gossipId}`);
+  const btn = document.getElementById(`read-more-${gossipId}`);
+
+  if (textEl.classList.contains("collapsed")) {
+    textEl.classList.remove("collapsed");
+    textEl.style.maxHeight = "120px";
+    textEl.style.overflowY = "auto";
+    btn.innerText = "Read less";
+  } else {
+    textEl.classList.add("collapsed");
+    textEl.style.maxHeight = "90px";
+    textEl.style.overflowY = "hidden";
+    btn.innerText = "Read more";
+  }
+}
+
+// ====== REACTIONS ======
+async function loadReactions(gossipId) {
+  const res = await fetch(`${API_BASE}/gossips/${gossipId}/reactions`);
+  const data = await res.json();
+
+  data.forEach(r => {
+    const el = document.getElementById(`r-${gossipId}-${r.emoji}`);
+    if (el) el.innerText = r.count;
+  });
+}
+
+async function toggleReaction(gossipId, emoji) {
+  reacted[gossipId] = reacted[gossipId] || {};
+  const hasReacted = reacted[gossipId][emoji] || false;
+
+  await fetch(`${API_BASE}/gossips/${gossipId}/reactions/toggle`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      emoji,
+      action: hasReacted ? "remove" : "add",
+    }),
+  });
+
+  reacted[gossipId][emoji] = !hasReacted;
+  localStorage.setItem("reacted", JSON.stringify(reacted));
+
+  loadReactions(gossipId);
+}
+
+// ====== COMMENTS ======
+async function loadComments(gossipId, limit) {
+  const res = await fetch(`${API_BASE}/gossips/${gossipId}/comments`);
+  const comments = await res.json();
+
+  const box = document.getElementById(`comments-${gossipId}`);
+  box.innerHTML = "";
+
+  const show = limit ? comments.slice(-limit) : comments;
+
+  show.forEach(c => {
+    const div = document.createElement("div");
+    div.className = "comment";
+    div.innerHTML = `<strong>${c.commenter_name || "Anonymous"}:</strong> ${c.comment}`;
+    box.appendChild(div);
+  });
+}
+
+async function postComment(gossipId) {
   const input = document.getElementById(`input-${gossipId}`);
-  let text = input.value.trim();
-  if (!text) return;
+  if (!input.value.trim()) return;
 
-  // Ask for name if not provided
-  const commenterName = prompt("Enter your name:", "Anonymous") || "Anonymous";
+  const name = prompt("Your name:", "Anonymous") || "Anonymous";
 
-  const commentList = document.getElementById(`comments-${gossipId}`);
-  const comment = document.createElement("div");
-  comment.classList.add("comment");
-  comment.innerHTML = `<strong>${commenterName}:</strong> ${text}`;
+  await fetch(`${API_BASE}/gossips/${gossipId}/comments`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      commenter_name: name,
+      comment: input.value,
+    }),
+  });
 
-  commentList.prepend(comment); // last of flexbox
   input.value = "";
+  loadComments(gossipId, 2);
+}
+
+// ====== EDIT POST ======
+function editPost(gossipId) {
+  const contentEl = document.getElementById(`post-content-${gossipId}`);
+  const updated = prompt("Edit post:", contentEl.innerText);
+  if (!updated) return;
+
+  fetch(`${API_BASE}/gossips/${gossipId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content: updated }),
+  }).then(fetchAllGossips);
 }
 
 // ====== INIT ======
-if (allGossipsContainer) {
-  fetchAllGossips();
-}
+if (allGossipsContainer) fetchAllGossips();
+if (loadMoreBtn) loadMoreBtn.onclick = loadMoreGossips;

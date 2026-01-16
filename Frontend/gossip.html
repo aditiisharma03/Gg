@@ -1,33 +1,43 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>All Gossips 💖</title>
-  <link rel="stylesheet" href="gossip.css">
-  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Montserrat:wght@400;500&display=swap" rel="stylesheet">
+
+  <!-- CSS -->
+  <link rel="stylesheet" href="gossip.css" />
+
+  <!-- Fonts -->
+  <link
+    href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Montserrat:wght@400;500&display=swap"
+    rel="stylesheet"
+  />
 </head>
 <body>
 
-<!-- Navbar -->
-<nav class="navbar">
-  <div class="logo"></div>
-</nav>
+  <!-- ========== NAVBAR ========== -->
+  <nav class="navbar">
+    <div class="logo">Banasthali Gossip 💕</div>
+  </nav>
 
-<!-- All Gossips Section -->
-<section class="gossip">
-  <h2>All Campus Gossips 💅</h2>
+  <!-- ========== GOSSIP SECTION ========== -->
+  <section class="gossip">
+    <h2>All Campus Gossips 💅</h2>
 
- 
-  
-  <!-- Gossip cards will be dynamically injected here -->
-  <div class="card-container" id="allGossips"></div>
+    <!-- Cards injected by JS -->
+    <div class="card-container" id="allGossips"></div>
 
-  <!-- Load More Button -->
-   
-<!-- JS -->
-<script src="gossips.js"></script>
+    <!-- Load More (JS controls visibility) -->
+    <div class="load-more-wrapper" style="text-align:center;">
+      <button id="loadMore" style="display:none;">
+        View More Gossips 💖
+      </button>
+    </div>
+  </section>
 
+  <!-- ========== JS ========== -->
+  <script src="gossips.js"></script>
 
 </body>
 </html>
