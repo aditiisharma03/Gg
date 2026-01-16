@@ -7,13 +7,14 @@ const API_BASE =
 // ====== ELEMENTS ======
 const allGossipsContainer = document.getElementById("allGossips");
 
-// Create View More button dynamically
+// Create View More button
 const viewMoreBtn = document.createElement("button");
 viewMoreBtn.innerText = "View More Gossips 💖";
 viewMoreBtn.classList.add("view-more-btn");
 
 // ====== STATE ======
 let gossipsData = [];
+let expanded = false; // 👈 IMPORTANT
 const INITIAL_COUNT = 6;
 
 // ====== FETCH ALL GOSSIPS ======
@@ -23,14 +24,20 @@ async function fetchAllGossips() {
     if (!res.ok) throw new Error("Failed to fetch");
 
     gossipsData = await res.json();
-    allGossipsContainer.innerHTML = "";
+    console.log("TOTAL GOSSIPS:", gossipsData.length); // debug proof
 
-    // Load first 6
+    allGossipsContainer.innerHTML = "";
+    expanded = false;
+
+    // Render first 6
     renderGossips(gossipsData.slice(0, INITIAL_COUNT));
 
-    // Show button only if more gossips exist
+    // Add button only if needed
     if (gossipsData.length > INITIAL_COUNT) {
+      viewMoreBtn.style.display = "block";
       allGossipsContainer.after(viewMoreBtn);
+    } else {
+      viewMoreBtn.style.display = "none";
     }
   } catch (err) {
     console.error(err);
@@ -67,9 +74,11 @@ function renderGossips(gossips) {
 
 // ====== VIEW MORE CLICK ======
 viewMoreBtn.addEventListener("click", () => {
-  // Load ALL remaining gossips
+  if (expanded) return; // 👈 prevent double render
+
   renderGossips(gossipsData.slice(INITIAL_COUNT));
-  viewMoreBtn.remove(); // remove button after click
+  expanded = true;
+  viewMoreBtn.style.display = "none";
 });
 
 // ====== INIT ======
