@@ -7,7 +7,7 @@ const API_BASE =
 // ====== ELEMENTS ======
 const allGossipsContainer = document.getElementById("allGossips");
 
-// Create View More button
+// View More button
 const viewMoreBtn = document.createElement("button");
 viewMoreBtn.innerText = "View More Gossips 💖";
 viewMoreBtn.classList.add("view-more-btn");
@@ -16,6 +16,9 @@ viewMoreBtn.classList.add("view-more-btn");
 let gossipsData = [];
 let expanded = false; // prevent double render
 const INITIAL_COUNT = 6;
+
+// Track which emojis have been reacted to (per gossipId)
+const reacted = {}; // e.g., { 1: { "❤️": true, "😂": false } }
 
 // ====== FETCH ALL GOSSIPS ======
 async function fetchAllGossips() {
@@ -43,7 +46,9 @@ async function fetchAllGossips() {
 
 // ====== RENDER GOSSIPS ======
 function renderGossips(gossips) {
-  gossips.forEach(async (gossip) => {
+  gossips.forEach((gossip) => {
+    reacted[gossip.id] = reacted[gossip.id] || {};
+
     const card = document.createElement("div");
     card.classList.add("card");
 
@@ -55,7 +60,6 @@ function renderGossips(gossips) {
         : `<img src="${mediaURL}" alt="Gossip Image">`;
     }
 
-    // Card HTML
     card.innerHTML = `
       ${mediaHTML}
       <div class="card-content">
@@ -63,114 +67,70 @@ function renderGossips(gossips) {
         <p>${gossip.content}</p>
 
         <!-- Emoji Reactions -->
-        <div class="reactions" id="reactions-${gossip.id}">
-          ❤️ <span id="r-${gossip.id}-❤️">0</span>
-          😂 <span id="r-${gossip.id}-😂">0</span>
-          😮 <span id="r-${gossip.id}-😮">0</span>
-          😡 <span id="r-${gossip.id}-😡">0</span>
+        <div class="reactions">
+          ${["❤️", "😂", "😮", "😡"].map(
+            (emoji) => `
+            <span onclick="toggleReaction(${gossip.id}, '${emoji}')" style="cursor:pointer;">
+              ${emoji} <span id="r-${gossip.id}-${emoji}">0</span>
+            </span>
+          `
+          ).join("")}
         </div>
 
         <!-- Comments -->
         <div class="comments">
-          <div class="comment-list" id="comments-${gossip.id}"></div>
-          <input
-            type="text"
-            placeholder="Add a comment 💬"
-            onkeypress="addComment(event, ${gossip.id})"
-          />
+          <div class="comment-list" id="comments-${gossip.id}" style="display:flex; flex-direction:column-reverse;"></div>
+          <div class="comment-input">
+            <input type="text" id="input-${gossip.id}" placeholder="Add a comment 💬" />
+            <button onclick="postComment(${gossip.id})">Post</button>
+          </div>
         </div>
       </div>
     `;
 
     allGossipsContainer.appendChild(card);
-
-    // Load reactions from backend
-    loadReactions(gossip.id);
-
-    // Load comments from backend
-    loadComments(gossip.id);
   });
 }
 
 // ====== VIEW MORE CLICK ======
 viewMoreBtn.addEventListener("click", () => {
   if (expanded) return;
+
   renderGossips(gossipsData.slice(INITIAL_COUNT));
   expanded = true;
   viewMoreBtn.style.display = "none";
 });
 
-// ====== REACTIONS ======
-async function loadReactions(gossipId) {
-  try {
-    const res = await fetch(`${API_BASE}/gossips/${gossipId}/reactions`);
-    const data = await res.json();
-    data.forEach(r => {
-      const counter = document.getElementById(`r-${gossipId}-${r.emoji}`);
-      if (counter) counter.innerText = r.count;
-    });
-  } catch (err) {
-    console.error("Failed to load reactions:", err);
+// ====== TOGGLE REACTION ======
+function toggleReaction(gossipId, emoji) {
+  const counter = document.getElementById(`r-${gossipId}-${emoji}`);
+  if (!counter) return;
+
+  reacted[gossipId][emoji] = !reacted[gossipId][emoji]; // toggle
+
+  if (reacted[gossipId][emoji]) {
+    counter.innerText = parseInt(counter.innerText) + 1;
+  } else {
+    counter.innerText = Math.max(0, parseInt(counter.innerText) - 1);
   }
 }
 
-async function react(gossipId, emoji) {
-  try {
-    // Toggle: if count > 0, remove; else add
-    const counter = document.getElementById(`r-${gossipId}-${emoji}`);
-    const current = parseInt(counter.innerText);
-    const action = current > 0 ? "remove" : "add";
-
-    await fetch(`${API_BASE}/gossips/${gossipId}/reactions/toggle`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ emoji, action })
-    });
-
-    // Reload reactions
-    loadReactions(gossipId);
-  } catch (err) {
-    console.error("Failed to update reaction:", err);
-  }
-}
-
-// ====== COMMENTS ======
-async function loadComments(gossipId) {
-  try {
-    const res = await fetch(`${API_BASE}/gossips/${gossipId}/comments`);
-    const comments = await res.json();
-    const commentList = document.getElementById(`comments-${gossipId}`);
-    commentList.innerHTML = "";
-    comments.forEach(c => {
-      const comment = document.createElement("div");
-      comment.classList.add("comment");
-      comment.innerText = `${c.commenter_name || "Anonymous"}: ${c.comment}`;
-      commentList.appendChild(comment);
-    });
-  } catch (err) {
-    console.error("Failed to load comments:", err);
-  }
-}
-
-async function addComment(event, gossipId) {
-  if (event.key !== "Enter") return;
-
-  const input = event.target;
-  const text = input.value.trim();
+// ====== POST COMMENT ======
+function postComment(gossipId) {
+  const input = document.getElementById(`input-${gossipId}`);
+  let text = input.value.trim();
   if (!text) return;
 
-  try {
-    await fetch(`${API_BASE}/gossips/${gossipId}/comments`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ commenter_name: "Anonymous", comment: text })
-    });
+  // Ask for name if not provided
+  const commenterName = prompt("Enter your name:", "Anonymous") || "Anonymous";
 
-    input.value = "";
-    loadComments(gossipId);
-  } catch (err) {
-    console.error("Failed to add comment:", err);
-  }
+  const commentList = document.getElementById(`comments-${gossipId}`);
+  const comment = document.createElement("div");
+  comment.classList.add("comment");
+  comment.innerHTML = `<strong>${commenterName}:</strong> ${text}`;
+
+  commentList.prepend(comment); // last of flexbox
+  input.value = "";
 }
 
 // ====== INIT ======

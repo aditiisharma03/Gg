@@ -187,24 +187,87 @@ body {
     width: 90%;
   }
 }
+
+/* ========== REACTIONS ========== */
+.reactions {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .reactions span {
-  margin-right: 10px;
   cursor: pointer;
   font-size: 18px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
+/* ========== COMMENTS ========== */
 .comments {
-  margin-top: 10px;
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
-.comments input {
-  width: 100%;
-  padding: 6px;
-  border-radius: 6px;
-  border: 1px solid #ddd;
+.comment-list {
+  display: flex;
+  flex-direction: column-reverse; /* latest comment at the bottom */
+  max-height: 200px;
+  overflow-y: auto;
+  padding-right: 4px;
+  gap: 4px;
 }
 
 .comment {
   font-size: 14px;
-  margin-bottom: 5px;
+  background: #f3f3f3;
+  padding: 4px 6px;
+  border-radius: 6px;
+  word-break: break-word;
+}
+
+.comment-input {
+  display: flex;
+  margin-top: 6px;
+  gap: 6px;
+}
+
+.comments input {
+  flex: 1;
+  padding: 6px;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+  font-size: 14px;
+}
+
+.comments button {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 6px;
+  background-color: #ff4500;
+  color: #fff;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.2s;
+}
+
+.comments button:hover {
+  background-color: #e03e00;
+}
+
+/* ========== SCROLLBAR FOR COMMENTS ========== */
+.comment-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.comment-list::-webkit-scrollbar-thumb {
+  background-color: rgba(0,0,0,0.2);
+  border-radius: 3px;
+}
+
+.comment-list::-webkit-scrollbar-track {
+  background: transparent;
 }

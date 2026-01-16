@@ -32,6 +32,9 @@ if (mediaInput) {
 // ====== FETCH LATEST GOSSIPS ======
 const gossipContainer = document.getElementById("gossipCards");
 
+// Track toggled reactions locally per gossip for frontend
+const toggledReactions = {}; // { gossipId: { '❤️': true/false, ... } }
+
 async function loadLatestGossips() {
   if (!gossipContainer) return;
 
@@ -42,6 +45,8 @@ async function loadLatestGossips() {
     gossipContainer.innerHTML = "";
 
     gossips.forEach((gossip) => {
+      toggledReactions[gossip.id] = toggledReactions[gossip.id] || {};
+
       const card = document.createElement("div");
       card.classList.add("card");
 
@@ -61,20 +66,21 @@ async function loadLatestGossips() {
 
           <!-- Emoji Reactions -->
           <div class="reactions" id="reactions-${gossip.id}">
-            ❤️ <span id="r-${gossip.id}-❤️">0</span>
-            😂 <span id="r-${gossip.id}-😂">0</span>
-            😮 <span id="r-${gossip.id}-😮">0</span>
-            😡 <span id="r-${gossip.id}-😡">0</span>
+            ${["❤️", "😂", "😮", "😡"].map(
+              (emoji) => `
+                <span onclick="toggleReaction(${gossip.id}, '${emoji}')" style="cursor:pointer;">
+                  ${emoji} <span id="r-${gossip.id}-${emoji}">0</span>
+                </span>`
+            ).join("")}
           </div>
 
           <!-- Comments -->
           <div class="comments">
-            <div class="comment-list" id="comments-${gossip.id}"></div>
-            <input
-              type="text"
-              placeholder="Add a comment 💬"
-              onkeypress="addComment(event, ${gossip.id})"
-            />
+            <div class="comment-list" id="comments-${gossip.id}" style="display:flex; flex-direction:column-reverse;"></div>
+            <div class="comment-input">
+              <input type="text" id="input-${gossip.id}" placeholder="Add a comment 💬" />
+              <button onclick="postComment(${gossip.id})">Post</button>
+            </div>
           </div>
         </div>
       `;
@@ -98,6 +104,7 @@ async function loadReactions(gossipId) {
   try {
     const res = await fetch(`${API_BASE}/gossips/${gossipId}/reactions`);
     const data = await res.json();
+
     data.forEach((r) => {
       const counter = document.getElementById(`r-${gossipId}-${r.emoji}`);
       if (counter) counter.innerText = r.count;
@@ -107,13 +114,16 @@ async function loadReactions(gossipId) {
   }
 }
 
-async function react(gossipId, emoji) {
+async function toggleReaction(gossipId, emoji) {
   try {
-    // Send reaction toggle to backend
+    // Determine if user already reacted
+    const hasReacted = toggledReactions[gossipId][emoji] || false;
+    toggledReactions[gossipId][emoji] = !hasReacted;
+
     await fetch(`${API_BASE}/gossips/${gossipId}/reactions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ emoji }),
+      body: JSON.stringify({ emoji, undo: hasReacted }), // send undo flag
     });
 
     // Refresh counts
@@ -133,7 +143,7 @@ async function loadComments(gossipId) {
     comments.forEach((c) => {
       const comment = document.createElement("div");
       comment.classList.add("comment");
-      comment.innerText = `${c.commenter_name || "Anonymous"}: ${c.comment}`;
+      comment.innerHTML = `<strong>${c.commenter_name || "Anonymous"}:</strong> ${c.comment}`;
       commentList.appendChild(comment);
     });
   } catch (err) {
@@ -141,18 +151,18 @@ async function loadComments(gossipId) {
   }
 }
 
-async function addComment(event, gossipId) {
-  if (event.key !== "Enter") return;
-
-  const input = event.target;
+async function postComment(gossipId) {
+  const input = document.getElementById(`input-${gossipId}`);
   const text = input.value.trim();
   if (!text) return;
+
+  const commenterName = prompt("Enter your name:", "Anonymous") || "Anonymous";
 
   try {
     await fetch(`${API_BASE}/gossips/${gossipId}/comments`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ commenter_name: "Anonymous", comment: text }),
+      body: JSON.stringify({ commenter_name: commenterName, comment: text }),
     });
 
     input.value = "";
