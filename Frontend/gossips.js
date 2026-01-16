@@ -1,50 +1,56 @@
-// ====== API BASE URL (LOCAL + LIVE AUTO) ======
+// ====== API BASE URL ======
 const API_BASE =
   location.hostname === "localhost"
     ? "http://localhost:3000"
-    : "https://gg-qrk5.onrender.com"; // 👈 apna backend URL
+    : "https://gg-qrk5.onrender.com";
 
-// ====== ALL GOSSIPS PAGE SCRIPT ======
+// ====== ELEMENTS ======
 const allGossipsContainer = document.getElementById("allGossips");
-const loadMoreBtn = document.getElementById("loadMore");
 
+// Create View More button dynamically
+const viewMoreBtn = document.createElement("button");
+viewMoreBtn.innerText = "View More Gossips 💖";
+viewMoreBtn.classList.add("view-more-btn");
+
+// ====== STATE ======
 let gossipsData = [];
-let displayed = 0;
-const perPage = 6;
+const INITIAL_COUNT = 6;
 
-// Fetch all gossips from backend
+// ====== FETCH ALL GOSSIPS ======
 async function fetchAllGossips() {
   try {
     const res = await fetch(`${API_BASE}/gossips`);
-    if (!res.ok) throw new Error("Network response was not ok");
+    if (!res.ok) throw new Error("Failed to fetch");
 
     gossipsData = await res.json();
-    displayed = 0;
     allGossipsContainer.innerHTML = "";
-    loadMoreGossips(); // first batch
+
+    // Load first 6
+    renderGossips(gossipsData.slice(0, INITIAL_COUNT));
+
+    // Show button only if more gossips exist
+    if (gossipsData.length > INITIAL_COUNT) {
+      allGossipsContainer.after(viewMoreBtn);
+    }
   } catch (err) {
-    console.error("Failed to fetch gossips:", err);
-    allGossipsContainer.innerHTML = "<p>Failed to load gossips 💔</p>";
-    if (loadMoreBtn) loadMoreBtn.style.display = "none";
+    console.error(err);
+    allGossipsContainer.innerHTML =
+      "<p>Failed to load gossips 💔</p>";
   }
 }
 
-// Load next batch
-function loadMoreGossips() {
-  const next = gossipsData.slice(displayed, displayed + perPage);
-
-  next.forEach((gossip) => {
+// ====== RENDER GOSSIPS ======
+function renderGossips(gossips) {
+  gossips.forEach((gossip) => {
     const card = document.createElement("div");
     card.classList.add("card");
 
     let mediaHTML = "";
     if (gossip.media_path) {
       const mediaURL = `${API_BASE}${gossip.media_path}`;
-      if (gossip.media_path.endsWith(".mp4")) {
-        mediaHTML = `<video src="${mediaURL}" controls></video>`;
-      } else {
-        mediaHTML = `<img src="${mediaURL}" alt="Gossip Image">`;
-      }
+      mediaHTML = gossip.media_path.endsWith(".mp4")
+        ? `<video src="${mediaURL}" controls></video>`
+        : `<img src="${mediaURL}" alt="Gossip Image">`;
     }
 
     card.innerHTML = `
@@ -57,23 +63,16 @@ function loadMoreGossips() {
 
     allGossipsContainer.appendChild(card);
   });
-
-  displayed += next.length;
-
-  // Show / hide Load More button
-  if (displayed >= gossipsData.length) {
-    if (loadMoreBtn) loadMoreBtn.style.display = "none";
-  } else {
-    if (loadMoreBtn) loadMoreBtn.style.display = "block";
-  }
 }
 
-// Load more button click
-if (loadMoreBtn) {
-  loadMoreBtn.addEventListener("click", loadMoreGossips);
-}
+// ====== VIEW MORE CLICK ======
+viewMoreBtn.addEventListener("click", () => {
+  // Load ALL remaining gossips
+  renderGossips(gossipsData.slice(INITIAL_COUNT));
+  viewMoreBtn.remove(); // remove button after click
+});
 
-// Initial load
+// ====== INIT ======
 if (allGossipsContainer) {
   fetchAllGossips();
 }
