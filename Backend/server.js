@@ -51,8 +51,8 @@ app.post("/gossips", async (req, res) => {
 
     if (req.files && req.files.media) {
       const file = req.files.media;
-      const uploadDir = path.join(__dirname, "uploads");
       const fs = require("fs");
+      const uploadDir = path.join(__dirname, "uploads");
 
       if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 
@@ -61,21 +61,24 @@ app.post("/gossips", async (req, res) => {
       media_path = "/uploads/" + path.basename(uploadPath);
     }
 
+    // Insert gossip
     const [result] = await db.promise().query(
       "INSERT INTO gossips (diva_name, content, media_path, created_at) VALUES (?, ?, ?, NOW())",
       [diva_name || "Anonymous", content, media_path]
     );
 
-    // Initialize reactions for this gossip
+    const gossipId = result.insertId;
+
+    // Initialize reactions automatically
     const emojis = ["❤️", "😂", "😮", "😡"];
     for (let emoji of emojis) {
       await db.promise().query(
         "INSERT INTO gossip_reactions (gossip_id, emoji, count) VALUES (?, ?, 0)",
-        [result.insertId, emoji]
+        [gossipId, emoji]
       );
     }
 
-    res.json({ success: true, id: result.insertId });
+    res.json({ success: true, id: gossipId });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to post gossip" });
@@ -118,6 +121,7 @@ app.post("/gossips/:id/comments", async (req, res) => {
 });
 
 // ===== REACTIONS =====
+// Get reactions for a gossip
 app.get("/gossips/:id/reactions", async (req, res) => {
   const gossipId = req.params.id;
   try {
@@ -132,23 +136,27 @@ app.get("/gossips/:id/reactions", async (req, res) => {
   }
 });
 
-app.post("/gossips/:id/reactions", async (req, res) => {
+// Toggle reaction (like/unlike) — just like Instagram
+app.post("/gossips/:id/reactions/toggle", async (req, res) => {
   const gossipId = req.params.id;
-  const { emoji } = req.body;
+  const { emoji, action } = req.body; // action = "add" or "remove"
 
-  if (!emoji) {
-    return res.status(400).json({ error: "Emoji is required" });
+  if (!emoji || !["add", "remove"].includes(action)) {
+    return res.status(400).json({ error: "Invalid emoji or action" });
   }
 
   try {
+    const delta = action === "add" ? 1 : -1;
+
     await db.promise().query(
-      "UPDATE gossip_reactions SET count = count + 1 WHERE gossip_id = ? AND emoji = ?",
-      [gossipId, emoji]
+      "UPDATE gossip_reactions SET count = count + ? WHERE gossip_id = ? AND emoji = ?",
+      [delta, gossipId, emoji]
     );
+
     res.json({ success: true });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to update reaction" });
+    res.status(500).json({ error: "Failed to toggle reaction" });
   }
 });
 

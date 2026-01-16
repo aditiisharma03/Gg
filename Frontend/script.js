@@ -1,4 +1,4 @@
-// ====== API BASE URL (LOCAL + LIVE AUTO) ======
+// ====== API BASE URL ======
 const API_BASE =
   location.hostname === "localhost"
     ? "http://localhost:3000"
@@ -60,11 +60,11 @@ async function loadLatestGossips() {
           <p>${gossip.content}</p>
 
           <!-- Emoji Reactions -->
-          <div class="reactions">
-            <span onclick="react(${gossip.id}, '❤️')">❤️ <span id="r-${gossip.id}-❤️">0</span></span>
-            <span onclick="react(${gossip.id}, '😂')">😂 <span id="r-${gossip.id}-😂">0</span></span>
-            <span onclick="react(${gossip.id}, '😮')">😮 <span id="r-${gossip.id}-😮">0</span></span>
-            <span onclick="react(${gossip.id}, '😡')">😡 <span id="r-${gossip.id}-😡">0</span></span>
+          <div class="reactions" id="reactions-${gossip.id}">
+            ❤️ <span id="r-${gossip.id}-❤️">0</span>
+            😂 <span id="r-${gossip.id}-😂">0</span>
+            😮 <span id="r-${gossip.id}-😮">0</span>
+            😡 <span id="r-${gossip.id}-😡">0</span>
           </div>
 
           <!-- Comments -->
@@ -80,6 +80,10 @@ async function loadLatestGossips() {
       `;
 
       gossipContainer.appendChild(card);
+
+      // Load reactions and comments from backend
+      loadReactions(gossip.id);
+      loadComments(gossip.id);
     });
   } catch (err) {
     console.error("Failed to load gossips:", err);
@@ -89,30 +93,73 @@ async function loadLatestGossips() {
 
 loadLatestGossips();
 
-// ====== EMOJI REACTIONS (FRONTEND ONLY) ======
-function react(gossipId, emoji) {
-  const counter = document.getElementById(`r-${gossipId}-${emoji}`);
-  if (!counter) return;
-
-  counter.innerText = parseInt(counter.innerText) + 1;
+// ====== REACTIONS ======
+async function loadReactions(gossipId) {
+  try {
+    const res = await fetch(`${API_BASE}/gossips/${gossipId}/reactions`);
+    const data = await res.json();
+    data.forEach((r) => {
+      const counter = document.getElementById(`r-${gossipId}-${r.emoji}`);
+      if (counter) counter.innerText = r.count;
+    });
+  } catch (err) {
+    console.error("Failed to load reactions:", err);
+  }
 }
 
-// ====== COMMENTS (FRONTEND ONLY) ======
-function addComment(event, gossipId) {
+async function react(gossipId, emoji) {
+  try {
+    // Send reaction toggle to backend
+    await fetch(`${API_BASE}/gossips/${gossipId}/reactions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ emoji }),
+    });
+
+    // Refresh counts
+    loadReactions(gossipId);
+  } catch (err) {
+    console.error("Failed to update reaction:", err);
+  }
+}
+
+// ====== COMMENTS ======
+async function loadComments(gossipId) {
+  try {
+    const res = await fetch(`${API_BASE}/gossips/${gossipId}/comments`);
+    const comments = await res.json();
+    const commentList = document.getElementById(`comments-${gossipId}`);
+    commentList.innerHTML = "";
+    comments.forEach((c) => {
+      const comment = document.createElement("div");
+      comment.classList.add("comment");
+      comment.innerText = `${c.commenter_name || "Anonymous"}: ${c.comment}`;
+      commentList.appendChild(comment);
+    });
+  } catch (err) {
+    console.error("Failed to load comments:", err);
+  }
+}
+
+async function addComment(event, gossipId) {
   if (event.key !== "Enter") return;
 
   const input = event.target;
   const text = input.value.trim();
   if (!text) return;
 
-  const commentList = document.getElementById(`comments-${gossipId}`);
+  try {
+    await fetch(`${API_BASE}/gossips/${gossipId}/comments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ commenter_name: "Anonymous", comment: text }),
+    });
 
-  const comment = document.createElement("div");
-  comment.classList.add("comment");
-  comment.innerText = text;
-
-  commentList.appendChild(comment);
-  input.value = "";
+    input.value = "";
+    loadComments(gossipId);
+  } catch (err) {
+    console.error("Failed to add comment:", err);
+  }
 }
 
 // ====== SUBMIT GOSSIP ======
