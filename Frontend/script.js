@@ -252,11 +252,16 @@ function createGossipCard(gossip) {
       Loading likes...
     </div>
     
-    
+    <!-- View Comments Button -->
+    <div style="text-align: center; padding: 10px 0;">
+      <button class="view-comments-btn" onclick="toggleComments(${gossip.id})" id="view-comments-${gossip.id}">
+        <span class="arrow">↓</span> View comments
+      </button>
+    </div>
     
     <!-- Comments Section (Hidden by default) -->
     <div class="comments-section" id="comments-${gossip.id}">
-      <div class="loading-comments">Loading comments... ✨</div>
+      <div class="no-comments">No comments yet. Be the first! 💬</div>
     </div>
     
     <div class="add-comment">
@@ -291,176 +296,24 @@ async function toggleComments(gossipId) {
   
   if (!commentsSection || !viewCommentsBtn) return;
   
+  // Toggle expanded state
   const isExpanded = commentsSection.classList.contains('expanded');
   
   if (!isExpanded) {
-    // Load comments when expanding
-    await loadComments(gossipId);
-    
-    // Update button to show comment count
-    await updateCommentCountButton(gossipId);
+    // Load comments if not already loaded
+    if (commentsSection.innerHTML.includes('Loading')) {
+      await loadComments(gossipId);
+    }
   }
   
-  // Toggle visibility
+  // Toggle classes
   commentsSection.classList.toggle('expanded');
   viewCommentsBtn.classList.toggle('expanded');
   
   // Update button text
-  if (isExpanded) {
-    viewCommentsBtn.innerHTML = '<span class="arrow">↓</span> View comments';
-  } else {
-    // Get comment count for button text
-    await updateCommentCountButton(gossipId);
-  }
-}
-
-// ====== COMMENT FUNCTIONS ======
-async function loadComments(gossipId, limit = 10) {
-  const commentsContainer = document.getElementById(`comments-${gossipId}`);
-  if (!commentsContainer) return;
-  
-  try {
-    // Show loading state
-    commentsContainer.innerHTML = '<div class="loading-comments">Loading comments... ✨</div>';
-    
-    const response = await fetch(`${API_BASE}/gossips/${gossipId}/comments`);
-    if (!response.ok) throw new Error('Failed to fetch comments');
-    
-    const comments = await response.json();
-    
-    if (comments.length === 0) {
-      commentsContainer.innerHTML = '<div class="no-comments">No comments yet. Be the first! 💬</div>';
-      return;
-    }
-    
-    // Sort by newest first
-    const sortedComments = comments.sort((a, b) => 
-      new Date(b.created_at) - new Date(a.created_at)
-    );
-    
-    const recentComments = limit ? sortedComments.slice(0, limit) : sortedComments;
-    
-    commentsContainer.innerHTML = recentComments.map(comment => createCommentHTML(comment)).join('');
-    
-  } catch (error) {
-    console.error('Error loading comments:', error);
-    commentsContainer.innerHTML = '<div class="no-comments">Error loading comments 💔</div>';
-  }
-}
-
-async function updateCommentCountButton(gossipId) {
-  const viewCommentsBtn = document.getElementById(`view-comments-${gossipId}`);
-  if (!viewCommentsBtn) return;
-  
-  try {
-    const response = await fetch(`${API_BASE}/gossips/${gossipId}/comments`);
-    if (!response.ok) return;
-    
-    const comments = await response.json();
-    const commentCount = comments.length;
-    
-    const isExpanded = document.getElementById(`comments-${gossipId}`).classList.contains('expanded');
-    
-    if (isExpanded) {
-      viewCommentsBtn.innerHTML = `<span class="arrow">↑</span> Hide comments (${commentCount})`;
-    } else {
-      viewCommentsBtn.innerHTML = `<span class="arrow">↓</span> View comments (${commentCount})`;
-    }
-  } catch (error) {
-    // Keep default text if can't get count
-    const isExpanded = document.getElementById(`comments-${gossipId}`).classList.contains('expanded');
-    viewCommentsBtn.innerHTML = isExpanded 
-      ? '<span class="arrow">↑</span> Hide comments' 
-      : '<span class="arrow">↓</span> View comments';
-  }
-}
-
-function createCommentHTML(comment) {
-  const initials = getInitials(comment.commenter_name);
-  const timeAgo = formatTimeAgo(comment.created_at || new Date());
-  
-  return `
-    <div class="comment" data-id="${comment.id}">
-      <div class="comment-avatar">${initials}</div>
-      <div class="comment-content">
-        <div class="comment-username">${comment.commenter_name || 'Anonymous'}</div>
-        <div class="comment-text">${comment.comment}</div>
-        <div class="comment-actions">
-          <div class="comment-time">${timeAgo}</div>
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-async function postComment(gossipId) {
-  const input = document.getElementById(`comment-input-${gossipId}`);
-  if (!input || !input.value.trim()) {
-    showNotification('Please enter a comment! 💬', 'info');
-    return;
-  }
-  
-  const commenterName = prompt('Your name (optional):', 'Anonymous') || 'Anonymous';
-  const commentText = input.value.trim();
-  
-  if (!commentText) return;
-  
-  try {
-    const response = await fetch(`${API_BASE}/gossips/${gossipId}/comments`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        commenter_name: commenterName,
-        comment: commentText
-      })
-    });
-    
-    if (!response.ok) throw new Error('Failed to post comment');
-    
-    const result = await response.json();
-    
-    if (result.success) {
-      input.value = '';
-      
-      // Clear the comment count cache and reload
-      await loadComments(gossipId);
-      await updateCommentCountButton(gossipId);
-      
-      // Ensure comments section is expanded
-      const commentsSection = document.getElementById(`comments-${gossipId}`);
-      const viewCommentsBtn = document.getElementById(`view-comments-${gossipId}`);
-      
-      if (commentsSection && !commentsSection.classList.contains('expanded')) {
-        commentsSection.classList.add('expanded');
-        if (viewCommentsBtn) {
-          viewCommentsBtn.classList.add('expanded');
-        }
-      }
-      
-      // Scroll to the new comment
-      commentsSection.scrollTop = commentsSection.scrollHeight;
-      
-      showNotification('Comment posted! 💬', 'success');
-    }
-  } catch (error) {
-    console.error('Error posting comment:', error);
-    showNotification('Failed to post comment 💔', 'error');
-  }
-}
-
-function focusCommentInput(gossipId) {
-  const input = document.getElementById(`comment-input-${gossipId}`);
-  if (input) {
-    input.focus();
-    
-    // Also expand comments if not already expanded
-    const commentsSection = document.getElementById(`comments-${gossipId}`);
-    const viewCommentsBtn = document.getElementById(`view-comments-${gossipId}`);
-    
-    if (commentsSection && !commentsSection.classList.contains('expanded')) {
-      toggleComments(gossipId);
-    }
-  }
+  viewCommentsBtn.innerHTML = isExpanded 
+    ? '<span class="arrow">↓</span> View comments' 
+    : '<span class="arrow">↑</span> Hide comments';
 }
 
 // ====== MENU FUNCTIONS ======
@@ -579,6 +432,95 @@ async function loadReactions(gossipId) {
   }
 }
 
+// ====== COMMENT FUNCTIONS ======
+async function loadComments(gossipId, limit = 5) {
+  const commentsContainer = document.getElementById(`comments-${gossipId}`);
+  if (!commentsContainer) return;
+  
+  try {
+    const response = await fetch(`${API_BASE}/gossips/${gossipId}/comments`);
+    if (!response.ok) return;
+    
+    const comments = await response.json();
+    
+    if (comments.length === 0) {
+      commentsContainer.innerHTML = '<div class="no-comments">No comments yet. Be the first! 💬</div>';
+      return;
+    }
+    
+    const recentComments = comments.slice(-limit);
+    commentsContainer.innerHTML = recentComments.map(comment => createCommentHTML(comment)).join('');
+    
+  } catch (error) {
+    console.error('Error loading comments:', error);
+    commentsContainer.innerHTML = '<div class="no-comments">Error loading comments 💔</div>';
+  }
+}
+
+function createCommentHTML(comment) {
+  const initials = getInitials(comment.commenter_name);
+  const timeAgo = formatTimeAgo(comment.created_at || new Date());
+  
+  return `
+    <div class="comment">
+      <div class="comment-avatar">${initials}</div>
+      <div class="comment-content">
+        <div class="comment-username">${comment.commenter_name || 'Anonymous'}</div>
+        <div class="comment-text">${comment.comment}</div>
+        <div class="comment-actions">
+          <button class="comment-action" onclick="likeComment(${comment.id})">Like</button>
+          <div class="comment-time">${timeAgo}</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+async function postComment(gossipId) {
+  const input = document.getElementById(`comment-input-${gossipId}`);
+  if (!input || !input.value.trim()) return;
+  
+  const commenterName = prompt('Your name (optional):', 'Anonymous') || 'Anonymous';
+  
+  try {
+    const response = await fetch(`${API_BASE}/gossips/${gossipId}/comments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        commenter_name: commenterName,
+        comment: input.value.trim()
+      })
+    });
+    
+    if (response.ok) {
+      input.value = '';
+      
+      // Refresh comments and show them
+      await loadComments(gossipId);
+      const commentsSection = document.getElementById(`comments-${gossipId}`);
+      const viewCommentsBtn = document.getElementById(`view-comments-${gossipId}`);
+      
+      // Expand comments if not already expanded
+      if (commentsSection && !commentsSection.classList.contains('expanded')) {
+        commentsSection.classList.add('expanded');
+        if (viewCommentsBtn) {
+          viewCommentsBtn.classList.add('expanded');
+          viewCommentsBtn.innerHTML = '<span class="arrow">↑</span> Hide comments';
+        }
+      }
+      
+      showNotification('Comment posted! 💬', 'success');
+    }
+  } catch (error) {
+    showNotification('Failed to post comment 💔', 'error');
+  }
+}
+
+function focusCommentInput(gossipId) {
+  const input = document.getElementById(`comment-input-${gossipId}`);
+  if (input) input.focus();
+}
+
 // ====== FORM HANDLING ======
 function handleMediaPreview() {
   if (!preview) return;
@@ -677,228 +619,5 @@ style.textContent = `
     from { transform: translateX(0); opacity: 1; }
     to { transform: translateX(100%); opacity: 0; }
   }
-  
-  .comments-section {
-    max-height: 0;
-    overflow: hidden;
-    transition: max-height 0.3s ease;
-  }
-  
-  .comments-section.expanded {
-    max-height: 500px;
-    overflow-y: auto;
-  }
-  
-  .view-comments-btn.expanded .arrow {
-    transform: rotate(180deg);
-  }
-  
-  .arrow {
-    display: inline-block;
-    transition: transform 0.3s ease;
-    margin-right: 5px;
-  }
-  
-  .loading-comments, .no-comments {
-    text-align: center;
-    padding: 20px;
-    color: #ff66b2;
-    font-style: italic;
-  }
-  
-  .comment {
-    display: flex;
-    gap: 10px;
-    padding: 10px;
-    border-bottom: 1px solid #ffe6f2;
-  }
-  
-  .comment-avatar {
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    background: linear-gradient(45deg, #ff4da6, #ff66b2);
-    color: white;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: bold;
-    flex-shrink: 0;
-  }
-  
-  .comment-avatar.small {
-    width: 28px;
-    height: 28px;
-    font-size: 12px;
-  }
-  
-  .comment-content {
-    flex: 1;
-  }
-  
-  .comment-username {
-    font-weight: 600;
-    color: #ff4da6;
-    font-size: 14px;
-  }
-  
-  .comment-text {
-    margin: 5px 0;
-    font-size: 14px;
-  }
-  
-  .comment-time {
-    font-size: 12px;
-    color: #ff99cc;
-  }
-  
-  .comment-actions {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-top: 5px;
-  }
-  
-  .comment-action {
-    background: none;
-    border: none;
-    color: #ff4da6;
-    font-size: 12px;
-    cursor: pointer;
-  }
-  
-  .add-comment {
-    display: flex;
-    gap: 10px;
-    padding: 10px;
-    align-items: center;
-  }
-  
-  .comment-input-wrapper {
-    flex: 1;
-  }
-  
-  .comment-input {
-    width: 100%;
-    padding: 8px 12px;
-    border: 1px solid #ffe6f2;
-    border-radius: 20px;
-    background: #fff5fa;
-    color: #ff4da6;
-  }
-  
-  .comment-submit {
-    background: linear-gradient(45deg, #ff4da6, #ff66b2);
-    color: white;
-    border: none;
-    padding: 8px 16px;
-    border-radius: 20px;
-    cursor: pointer;
-    font-weight: 600;
-  }
-  
-  .notification {
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    background: white;
-    padding: 15px 20px;
-    border-radius: 10px;
-    box-shadow: 0 5px 15px rgba(255, 77, 166, 0.2);
-    border-left: 4px solid #ff4da6;
-    z-index: 1000;
-    animation: slideInRight 0.3s ease;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-  
-  .notification.success {
-    border-left-color: #4CAF50;
-  }
-  
-  .notification.error {
-    border-left-color: #f44336;
-  }
-  
-  .notification.info {
-    border-left-color: #2196F3;
-  }
-  
-  .notification button {
-    background: none;
-    border: none;
-    color: #999;
-    cursor: pointer;
-    font-size: 18px;
-  }
-  
-  @keyframes slideInRight {
-    from {
-      transform: translateX(100%);
-      opacity: 0;
-    }
-    to {
-      transform: translateX(0);
-      opacity: 1;
-    }
-  }
 `;
 document.head.appendChild(style);
-// Mobile Navigation Toggle
-function initMobileNav() {
-  const navbar = document.querySelector('.navbar');
-  if (!navbar) return;
-  
-  // Create hamburger button
-  const navToggle = document.createElement('button');
-  navToggle.className = 'nav-toggle';
-  navToggle.innerHTML = '☰';
-  navToggle.setAttribute('aria-label', 'Toggle menu');
-  navToggle.setAttribute('aria-expanded', 'false');
-  
-  // Insert at beginning of navbar
-  navbar.insertBefore(navToggle, navbar.firstChild);
-  
-  // Toggle menu on click
-  navToggle.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const navLinks = document.querySelector('.nav-links');
-    const isExpanded = navToggle.getAttribute('aria-expanded') === 'true';
-    
-    navLinks.classList.toggle('active');
-    navToggle.setAttribute('aria-expanded', !isExpanded);
-    navToggle.innerHTML = isExpanded ? '☰' : '✕';
-  });
-  
-  // Close menu when clicking outside
-  document.addEventListener('click', (e) => {
-    if (!e.target.closest('.navbar')) {
-      const navLinks = document.querySelector('.nav-links');
-      const navToggle = document.querySelector('.nav-toggle');
-      
-      navLinks.classList.remove('active');
-      if (navToggle) {
-        navToggle.setAttribute('aria-expanded', 'false');
-        navToggle.innerHTML = '☰';
-      }
-    }
-  });
-  
-  // Close menu when clicking a link
-  document.querySelectorAll('.nav-links a').forEach(link => {
-    link.addEventListener('click', () => {
-      const navLinks = document.querySelector('.nav-links');
-      const navToggle = document.querySelector('.nav-toggle');
-      
-      navLinks.classList.remove('active');
-      if (navToggle) {
-        navToggle.setAttribute('aria-expanded', 'false');
-        navToggle.innerHTML = '☰';
-      }
-    });
-  });
-}
-
-// Initialize when DOM is loaded
-document.addEventListener('DOMContentLoaded', initMobileNav);
