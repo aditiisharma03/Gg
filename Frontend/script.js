@@ -252,12 +252,7 @@ function createGossipCard(gossip) {
       Loading likes...
     </div>
     
-    <!-- View Comments Button -->
-    <div style="text-align: center; padding: 10px 0;">
-      <button class="view-comments-btn" onclick="toggleComments(${gossip.id})" id="view-comments-${gossip.id}">
-        <span class="arrow">↓</span> View comments
-      </button>
-    </div>
+    
     
     <!-- Comments Section (Hidden by default) -->
     <div class="comments-section" id="comments-${gossip.id}">
