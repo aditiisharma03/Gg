@@ -1,43 +1,132 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>All Gossips 💖</title>
-
-  <!-- CSS -->
-  <link rel="stylesheet" href="gossip.css" />
-
-  <!-- Fonts -->
-  <link
-    href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Montserrat:wght@400;500&display=swap"
-    rel="stylesheet"
-  />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>All Gossips - Banasthali Gossip 💖</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Pacifico&display=swap" rel="stylesheet">
+    <style>
+        .all-gossips-header {
+            text-align: center;
+            padding: 40px 20px;
+            background: linear-gradient(135deg, #ff9cd3, #ff6bb5);
+            color: white;
+        }
+        
+        .all-gossips-header h1 {
+            font-family: 'Pacifico', cursive;
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+        
+        .all-gossips-header p {
+            font-size: 18px;
+            opacity: 0.9;
+        }
+        
+        .back-button {
+            position: absolute;
+            left: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.3s;
+        }
+        
+        .back-button:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-50%) translateX(-5px);
+        }
+        
+        .all-gossips-container {
+            padding: 40px 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        .gossip-count {
+            text-align: center;
+            color: #ff6bb5;
+            margin-bottom: 30px;
+            font-weight: 600;
+            font-size: 18px;
+        }
+    </style>
 </head>
 <body>
+    <!-- Navbar -->
+    <nav class="navbar">
+        <div class="logo">Banasthali Gossip</div>
+        <ul class="nav-links">
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#submit">Submit</a></li>
+            <li><a href="index.html#divas">Divas</a></li>
+            <li><a href="index.html#contact">Contact</a></li>
+        </ul>
+    </nav>
 
-  <!-- ========== NAVBAR ========== -->
-  <nav class="navbar">
-    <div class="logo">Banasthali Gossip 💕</div>
-  </nav>
+    <!-- Header -->
+    <header class="all-gossips-header">
+        <a href="index.html" class="back-button">← Back</a>
+        <h1>All Gossips 💖</h1>
+        <p>All the juicy gossip in one place</p>
+    </header>
 
-  <!-- ========== GOSSIP SECTION ========== -->
-  <section class="gossip">
-    <h2>All Campus Gossips 💅</h2>
+    <!-- All Gossips -->
+    <section class="all-gossips-container">
+        <div class="gossip-count" id="gossipCount">Loading gossips...</div>
+        <div class="card-container" id="allGossipCards"></div>
+    </section>
 
-    <!-- Cards injected by JS -->
-    <div class="card-container" id="allGossips"></div>
+    <!-- Footer -->
+    <footer>
+        <p>&copy; 2026 Banasthali Gossip Hub 💖</p>
+    </footer>
 
-    <!-- Load More (JS controls visibility) -->
-    <div class="load-more-wrapper" style="text-align:center;">
-      <button id="loadMore" style="display:none;">
-        View More Gossips 💖
-      </button>
-    </div>
-  </section>
-
-  <!-- ========== JS ========== -->
-  <script src="gossips.js"></script>
-
+    <script src="script.js"></script>
+    <script>
+        // Load all gossips for gossip.html
+        async function loadAllGossips() {
+            try {
+                const API_BASE = location.hostname === "localhost" 
+                    ? "http://localhost:3000" 
+                    : "https://gg-qrk5.onrender.com";
+                
+                const response = await fetch(`${API_BASE}/gossips`);
+                const allGossips = await response.json();
+                
+                // Update count
+                document.getElementById('gossipCount').textContent = 
+                    `${allGossips.length} ${allGossips.length === 1 ? 'gossip' : 'gossips'} found`;
+                
+                // Display all gossips
+                const container = document.getElementById('allGossipCards');
+                container.innerHTML = '';
+                
+                allGossips.forEach(gossip => {
+                    const card = createGossipCard(gossip);
+                    container.appendChild(card);
+                });
+                
+            } catch (error) {
+                console.error('Error loading all gossips:', error);
+                document.getElementById('allGossipCards').innerHTML = 
+                    '<div class="error">Failed to load gossips 💔</div>';
+            }
+        }
+        
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', loadAllGossips);
+    </script>
 </body>
 </html>

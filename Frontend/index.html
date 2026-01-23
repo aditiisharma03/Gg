@@ -7,6 +7,15 @@
 
   <link rel="stylesheet" href="style.css" />
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Montserrat:wght@400;500&display=swap" rel="stylesheet">
+  <!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-CXBX7VWJ4Y"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-CXBX7VWJ4Y');
+</script>
 </head>
 <body>
 
@@ -33,17 +42,21 @@
     </div>
   </section>
 
-  <!-- Gossip Feed -->
-  <section class="gossip" id="gossip">
-    <h2>Latest Gossips 💖</h2>
-    <div class="card-container" id="gossipCards"></div>
+ <!-- Gossip Feed -->
+<section class="gossip" id="gossip">
+  <h2>Latest Gossips 💖</h2>
+  <div class="card-container" id="gossipCards"></div>
+  
+  <!-- View More Button - Moved INSIDE the gossip section -->
+  <div class="view-more-container">
+    <a href="gossip.html">
+      <button id="loadMore">
+        <span>💖</span> View More Gossips <span>→</span>
+      </button>
+    </a>
+  </div>
+</section>
 
-    <div style="margin-top: 45px; text-align: center;">
-      <a href="gossip.html">
-        <button id="loadMore">View More Gossips 💕</button>
-      </a>
-    </div>
-  </section>
 
   <!-- Bratz Section (just aesthetic) -->
   <section class="bratz">
@@ -73,7 +86,7 @@
 
       <div class="form-buttons">
         <button type="submit">Post Gossip ✨</button>
-        <button type="button" id="cancelGossip">Cancel ❌</button>
+       
       </div>
 
       <p class="anon-text">
