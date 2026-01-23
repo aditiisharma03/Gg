@@ -73,7 +73,6 @@
     <h2>Share Your Gossip 💌</h2>
 
     <form id="gossipForm">
-
       <input type="text" name="diva_name" placeholder="Diva name (optional)" />
       <textarea name="content" placeholder="Your gossip... 💖" rows="4" required></textarea>
 
@@ -86,7 +85,7 @@
 
       <div class="form-buttons">
         <button type="submit">Post Gossip ✨</button>
-       
+        <button type="button" id="cancelGossip">Cancel</button>
       </div>
 
       <p class="anon-text">
@@ -126,17 +125,5 @@
 
   <!-- JS -->
   <script src="script.js"></script>
-  <script>
-    // Cancel button in gossip form
-    const cancelBtn = document.getElementById("cancelGossip");
-    const gossipForm = document.getElementById("gossipForm");
-    const preview = document.getElementById("preview");
-
-    cancelBtn.addEventListener("click", () => {
-      gossipForm.reset();
-      preview.innerHTML = "";
-    });
-  </script>
-
 </body>
 </html>

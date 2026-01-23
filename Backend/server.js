@@ -23,7 +23,8 @@ app.get("/gossips/latest", async (req, res) => {
   try {
     const [rows] = await db.promise().query(
       `SELECT g.*, 
-        (SELECT SUM(count) FROM gossip_reactions WHERE gossip_id = g.id) as total_reactions
+        (SELECT SUM(count) FROM gossip_reactions WHERE gossip_id = g.id) as total_reactions,
+        (SELECT COUNT(*) FROM gossip_comments WHERE gossip_id = g.id) as comment_count
        FROM gossips g 
        ORDER BY g.created_at DESC 
        LIMIT 3`
@@ -40,7 +41,8 @@ app.get("/gossips", async (req, res) => {
   try {
     const [rows] = await db.promise().query(
       `SELECT g.*, 
-        (SELECT SUM(count) FROM gossip_reactions WHERE gossip_id = g.id) as total_reactions
+        (SELECT SUM(count) FROM gossip_reactions WHERE gossip_id = g.id) as total_reactions,
+        (SELECT COUNT(*) FROM gossip_comments WHERE gossip_id = g.id) as comment_count
        FROM gossips g 
        ORDER BY g.created_at DESC`
     );
@@ -56,7 +58,8 @@ app.get("/gossips/:id", async (req, res) => {
   try {
     const [rows] = await db.promise().query(
       `SELECT g.*, 
-        (SELECT SUM(count) FROM gossip_reactions WHERE gossip_id = g.id) as total_reactions
+        (SELECT SUM(count) FROM gossip_reactions WHERE gossip_id = g.id) as total_reactions,
+        (SELECT COUNT(*) FROM gossip_comments WHERE gossip_id = g.id) as comment_count
        FROM gossips g 
        WHERE g.id = ?`,
       [req.params.id]
@@ -105,9 +108,13 @@ app.post("/gossips", async (req, res) => {
       );
     }
 
-    // Fetch the newly created gossip
+    // Fetch the newly created gossip with counts
     const [newGossip] = await db.promise().query(
-      "SELECT * FROM gossips WHERE id = ?",
+      `SELECT g.*, 
+        (SELECT SUM(count) FROM gossip_reactions WHERE gossip_id = g.id) as total_reactions,
+        (SELECT COUNT(*) FROM gossip_comments WHERE gossip_id = g.id) as comment_count
+       FROM gossips g 
+       WHERE g.id = ?`,
       [gossipId]
     );
 
@@ -128,7 +135,18 @@ app.put("/gossips/:id", async (req, res) => {
       "UPDATE gossips SET content = ? WHERE id = ?",
       [content, req.params.id]
     );
-    res.json({ success: true });
+    
+    // Return updated gossip with counts
+    const [updatedGossip] = await db.promise().query(
+      `SELECT g.*, 
+        (SELECT SUM(count) FROM gossip_reactions WHERE gossip_id = g.id) as total_reactions,
+        (SELECT COUNT(*) FROM gossip_comments WHERE gossip_id = g.id) as comment_count
+       FROM gossips g 
+       WHERE g.id = ?`,
+      [req.params.id]
+    );
+    
+    res.json({ success: true, gossip: updatedGossip[0] });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to edit post" });
