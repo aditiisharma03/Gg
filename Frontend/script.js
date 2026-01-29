@@ -532,11 +532,11 @@ function setupEventListeners() {
     gossipForm.addEventListener('submit', handleFormSubmit);
   }
   
-  // Load more button
+  // FIX 2: Load More button now opens gossip.html
   if (loadMoreBtn) {
-    loadMoreBtn.addEventListener('click', async (e) => {
+    loadMoreBtn.addEventListener('click', (e) => {
       e.preventDefault();
-      await loadMoreGossips();
+      window.location.href = 'gossip.html';
     });
   }
   
@@ -570,26 +570,7 @@ async function loadGossips() {
   }
 }
 
-async function loadMoreGossips() {
-  try {
-    const response = await fetch(`${API_BASE}/gossips`);
-    if (!response.ok) throw new Error('Failed to fetch more gossips');
-    
-    const moreGossips = await response.json();
-    displayedGossips = [...displayedGossips, ...moreGossips.slice(displayedGossips.length, displayedGossips.length + GOSSIPS_PER_PAGE)];
-    
-    renderGossips();
-    
-    // Hide button if no more gossips
-    if (displayedGossips.length >= moreGossips.length) {
-      loadMoreBtn.style.display = 'none';
-    }
-    
-  } catch (error) {
-    console.error('Error loading more gossips:', error);
-    showNotification('Failed to load more gossips 💔', 'error');
-  }
-}
+// REMOVED: loadMoreGossips function since we're redirecting to gossip.html
 
 function showLoading() {
   if (gossipContainer) {
@@ -887,6 +868,7 @@ async function loadReactions(gossipId) {
 }
 
 // ====== COMMENT FUNCTIONS ======
+// FIX 1: Fixed comment count issue
 async function toggleComments(gossipId) {
   const commentsSection = document.getElementById(`comments-${gossipId}`);
   const viewCommentsBtn = document.getElementById(`view-comments-${gossipId}`);
@@ -902,14 +884,31 @@ async function toggleComments(gossipId) {
     }
   }
   
+  // Get actual comment count correctly
+  try {
+    const response = await fetch(`${API_BASE}/gossips/${gossipId}/comments`);
+    if (response.ok) {
+      const comments = await response.json();
+      const commentCount = comments.length;
+      
+      // Update button text with correct count
+      const arrow = isExpanded ? '↓' : '↑';
+      const text = isExpanded ? 'View' : 'Hide';
+      viewCommentsBtn.innerHTML = `<span class="arrow">${arrow}</span> ${text} comments (${commentCount})`;
+    }
+  } catch (error) {
+    console.error('Error fetching comment count:', error);
+    // Fallback: count actual comment elements
+    const commentElements = commentsSection.querySelectorAll('.comment');
+    const commentCount = commentElements.length;
+    const arrow = isExpanded ? '↓' : '↑';
+    const text = isExpanded ? 'View' : 'Hide';
+    viewCommentsBtn.innerHTML = `<span class="arrow">${arrow}</span> ${text} comments (${commentCount})`;
+  }
+  
   // Toggle classes
   commentsSection.classList.toggle('expanded');
   viewCommentsBtn.classList.toggle('expanded');
-  
-  // Update button text
-  viewCommentsBtn.innerHTML = isExpanded 
-    ? `<span class="arrow">↓</span> View comments (${commentsSection.children.length - 1})` 
-    : `<span class="arrow">↑</span> Hide comments (${commentsSection.children.length - 1})`;
 }
 
 async function loadComments(gossipId) {
@@ -924,6 +923,15 @@ async function loadComments(gossipId) {
     
     if (comments.length === 0) {
       commentsContainer.innerHTML = '<div class="no-comments">No comments yet. Be the first! 💬</div>';
+      
+      // Update button with 0 count
+      const viewCommentsBtn = document.getElementById(`view-comments-${gossipId}`);
+      if (viewCommentsBtn) {
+        const isExpanded = viewCommentsBtn.classList.contains('expanded');
+        const arrow = isExpanded ? '↑' : '↓';
+        const text = isExpanded ? 'Hide' : 'View';
+        viewCommentsBtn.innerHTML = `<span class="arrow">${arrow}</span> ${text} comments (0)`;
+      }
       return;
     }
     
@@ -932,8 +940,11 @@ async function loadComments(gossipId) {
     // Update view comments button count
     const viewCommentsBtn = document.getElementById(`view-comments-${gossipId}`);
     if (viewCommentsBtn) {
-      const currentText = viewCommentsBtn.textContent;
-      viewCommentsBtn.innerHTML = currentText.replace(/\d+/, comments.length);
+      const commentCount = comments.length;
+      const isExpanded = viewCommentsBtn.classList.contains('expanded');
+      const arrow = isExpanded ? '↑' : '↓';
+      const text = isExpanded ? 'Hide' : 'View';
+      viewCommentsBtn.innerHTML = `<span class="arrow">${arrow}</span> ${text} comments (${commentCount})`;
     }
     
   } catch (error) {
@@ -986,40 +997,31 @@ async function postComment(gossipId) {
       // Clear input
       input.value = '';
       
-      // Add new comment to the top
-      const commentsContainer = document.getElementById(`comments-${gossipId}`);
-      if (commentsContainer) {
-        const commentHTML = createCommentHTML(result.comment);
-        if (commentsContainer.querySelector('.no-comments')) {
-          commentsContainer.innerHTML = commentHTML;
-        } else {
-          commentsContainer.insertAdjacentHTML('afterbegin', commentHTML);
-        }
-      }
-      
-      // Update comment count
-      const viewCommentsBtn = document.getElementById(`view-comments-${gossipId}`);
-      if (viewCommentsBtn) {
-        const currentCount = parseInt(viewCommentsBtn.textContent.match(/\d+/)?.[0] || 0);
-        const newCount = currentCount + 1;
-        viewCommentsBtn.innerHTML = viewCommentsBtn.innerHTML.replace(/\d+/, newCount);
-      }
+      // Reload comments to get updated list and count
+      await loadComments(gossipId);
       
       showNotification('Comment posted! 💬', 'success');
       
       // Auto-expand comments section
-      setTimeout(() => {
-        const commentsSection = document.getElementById(`comments-${gossipId}`);
-        const viewCommentsBtn = document.getElementById(`view-comments-${gossipId}`);
-        
-        if (commentsSection && !commentsSection.classList.contains('expanded')) {
-          commentsSection.classList.add('expanded');
-          if (viewCommentsBtn) {
-            viewCommentsBtn.classList.add('expanded');
-            viewCommentsBtn.innerHTML = viewCommentsBtn.innerHTML.replace('↓', '↑');
+      const commentsSection = document.getElementById(`comments-${gossipId}`);
+      const viewCommentsBtn = document.getElementById(`view-comments-${gossipId}`);
+      
+      if (commentsSection && !commentsSection.classList.contains('expanded')) {
+        commentsSection.classList.add('expanded');
+        if (viewCommentsBtn) {
+          viewCommentsBtn.classList.add('expanded');
+          // Get updated count for the button
+          try {
+            const countResponse = await fetch(`${API_BASE}/gossips/${gossipId}/comments`);
+            if (countResponse.ok) {
+              const comments = await countResponse.json();
+              viewCommentsBtn.innerHTML = `<span class="arrow">↑</span> Hide comments (${comments.length})`;
+            }
+          } catch (error) {
+            viewCommentsBtn.innerHTML = `<span class="arrow">↑</span> Hide comments`;
           }
         }
-      }, 100);
+      }
     }
   } catch (error) {
     console.error('Error posting comment:', error);
@@ -1077,24 +1079,21 @@ async function handleFormSubmit(e) {
       body: formData
     });
     
-    const result = await response.json();
+        const result = await response.json();
     
-    if (result.success) {
+    if (response.ok && result.id) {
+      // Reset form
       gossipForm.reset();
       if (preview) preview.innerHTML = '';
       
-      // Add new gossip to the top
-      if (gossipContainer) {
-        const newCard = createGossipCard(result.gossip);
-        gossipContainer.insertBefore(newCard, gossipContainer.firstChild);
-      }
-      
+      // Show success notification
       showNotification('Gossip posted successfully! 💖', 'success');
       
-      // Scroll to new post
-      if (gossipContainer && gossipContainer.firstChild) {
-        gossipContainer.firstChild.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      }
+      // Reload gossips to show the new post
+      await loadGossips();
+      
+      // Scroll to top to show the new gossip
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } else {
       throw new Error(result.error || 'Failed to post gossip');
     }
@@ -1102,6 +1101,7 @@ async function handleFormSubmit(e) {
     console.error('Error posting gossip:', error);
     showNotification(error.message || 'Failed to post gossip 💔', 'error');
   } finally {
+    // Restore button state
     submitBtn.textContent = originalText;
     submitBtn.disabled = false;
   }
@@ -1109,49 +1109,328 @@ async function handleFormSubmit(e) {
 
 // ====== SHARE FUNCTION ======
 async function sharePost(gossipId) {
-  const shareUrl = `${window.location.origin}${window.location.pathname}?gossip=${gossipId}`;
-  
-  if (navigator.share) {
-    try {
+  try {
+    const gossipCard = document.querySelector(`.card[data-id="${gossipId}"]`);
+    if (!gossipCard) return;
+    
+    const content = gossipCard.querySelector('.card-content p')?.textContent || '';
+    const author = gossipCard.querySelector('.username')?.textContent || 'Anonymous';
+    const time = gossipCard.querySelector('.post-time')?.textContent || '';
+    
+    const shareText = `Check out this gossip from ${author} (${time}):\n\n"${content}"\n\n👀 See more at: ${window.location.href}`;
+    
+    if (navigator.share) {
+      // Use Web Share API if available
       await navigator.share({
-        title: 'Banasthali Gossip',
-        text: 'Check out this juicy gossip!',
-        url: shareUrl
+        title: 'Diva Drama',
+        text: shareText,
+        url: window.location.href
       });
-    } catch (error) {
-      console.log('Share cancelled');
+      showNotification('Shared successfully! 🔄', 'success');
+    } else if (navigator.clipboard) {
+      // Fallback to clipboard
+      await navigator.clipboard.writeText(shareText);
+      showNotification('Copied to clipboard! 📋', 'success');
+    } else {
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea');
+      textArea.value = shareText;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      showNotification('Copied to clipboard! 📋', 'success');
     }
-  } else {
-    // Fallback: copy to clipboard
-    navigator.clipboard.writeText(shareUrl).then(() => {
-      showNotification('Link copied to clipboard! 📋', 'success');
-    }).catch(() => {
-      showNotification('Failed to copy link 💔', 'error');
-    });
+  } catch (error) {
+    console.error('Error sharing:', error);
+    if (error.name !== 'AbortError') {
+      showNotification('Failed to share 💔', 'error');
+    }
   }
 }
 
-// ====== AUTO-REFRESH ======
-function startAutoRefresh() {
-  // Refresh gossips every 30 seconds
-  setInterval(async () => {
-    if (document.visibilityState === 'visible') {
-      await loadGossips();
-    }
-  }, 30000);
+// ====== INFINITE SCROLL FOR GOSSIP.HTML ======
+let isLoading = false;
+let currentPage = 1;
+
+// Only initialize infinite scroll on gossip.html
+if (window.location.pathname.includes('gossip.html')) {
+  document.addEventListener('DOMContentLoaded', async () => {
+    await initializeInfiniteScroll();
+    setupInfiniteScroll();
+  });
 }
 
-// Start auto-refresh
-setTimeout(startAutoRefresh, 10000);
+async function initializeInfiniteScroll() {
+  try {
+    // Load first page
+    await loadGossipsPage(1);
+    
+    // Add load more button initially
+    addLoadMoreButton();
+  } catch (error) {
+    console.error('Error initializing infinite scroll:', error);
+   
+  }
+}
 
-// Export functions for global use
+async function loadGossipsPage(page) {
+  if (isLoading) return;
+  
+  isLoading = true;
+  showLoadingIndicator();
+  
+  try {
+    const response = await fetch(`${API_BASE}/gossips?page=${page}&limit=10`);
+    if (!response.ok) throw new Error('Failed to fetch gossips');
+    
+    const gossips = await response.json();
+    
+    if (gossips.length === 0) {
+      if (page === 1) {
+        showNoGossipsMessage();
+      } else {
+        showNoMoreGossipsMessage();
+      }
+      return;
+    }
+    
+    // Append gossips to container
+    appendGossips(gossips);
+    currentPage = page;
+    
+  } catch (error) {
+    console.error('Error loading page:', error);
+    showNotification('Failed to load more gossips 💔', 'error');
+  } finally {
+    isLoading = false;
+    hideLoadingIndicator();
+    updateLoadMoreButton();
+  }
+}
+
+function showLoadingIndicator() {
+  const loadingDiv = document.getElementById('loading-indicator');
+  if (loadingDiv) {
+    loadingDiv.style.display = 'block';
+  } else {
+    const indicator = document.createElement('div');
+    indicator.id = 'loading-indicator';
+    indicator.style.cssText = `
+      text-align: center;
+      padding: 20px;
+      display: none;
+    `;
+    indicator.innerHTML = `
+      <div class="loading-spinner"></div>
+      <p style="color: #ff4da6; margin-top: 10px;">Loading more gossips... 💕</p>
+    `;
+    gossipContainer?.appendChild(indicator);
+  }
+  
+  document.getElementById('loading-indicator').style.display = 'block';
+}
+
+function hideLoadingIndicator() {
+  const indicator = document.getElementById('loading-indicator');
+  if (indicator) {
+    indicator.style.display = 'none';
+  }
+}
+
+function showNoGossipsMessage() {
+  if (gossipContainer) {
+    gossipContainer.innerHTML = `
+      <div style="text-align: center; padding: 40px;">
+        <div style="font-size: 48px; color: #ff4da6; margin-bottom: 20px;">🌸</div>
+        <p style="color: #ff4da6; font-size: 18px; margin-bottom: 10px;">No gossips yet!</p>
+        <p style="color: #ff66b2;">Be the first to share something juicy 💖</p>
+      </div>
+    `;
+  }
+}
+
+function showNoMoreGossipsMessage() {
+  const noMoreDiv = document.createElement('div');
+  noMoreDiv.style.cssText = `
+    text-align: center;
+    padding: 20px;
+    color: #ff66b2;
+    font-style: italic;
+  `;
+  noMoreDiv.textContent = "That's all the gossip for now! 🌸";
+  
+  // Remove load more button
+  const loadMoreBtn = document.getElementById('load-more-btn');
+  if (loadMoreBtn) loadMoreBtn.remove();
+  
+  gossipContainer?.appendChild(noMoreDiv);
+}
+
+function appendGossips(gossips) {
+  gossips.forEach(gossip => {
+    const card = createGossipCard(gossip);
+    gossipContainer?.appendChild(card);
+  });
+}
+
+function addLoadMoreButton() {
+  const existingBtn = document.getElementById('load-more-btn');
+  if (existingBtn) return;
+  
+  const loadMoreBtn = document.createElement('button');
+  loadMoreBtn.id = 'load-more-btn';
+  loadMoreBtn.style.cssText = `
+    display: block;
+    margin: 30px auto;
+    background: linear-gradient(45deg, #ff4da6, #ff66b2);
+    color: white;
+    border: none;
+    padding: 12px 30px;
+    border-radius: 25px;
+    font-weight: 600;
+    font-size: 16px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(255, 77, 166, 0.2);
+  `;
+  loadMoreBtn.textContent = 'Load More Gossip 💕';
+  loadMoreBtn.onclick = () => loadGossipsPage(currentPage + 1);
+  loadMoreBtn.onmouseenter = () => {
+    loadMoreBtn.style.transform = 'translateY(-2px)';
+    loadMoreBtn.style.boxShadow = '0 6px 20px rgba(255, 77, 166, 0.3)';
+  };
+  loadMoreBtn.onmouseleave = () => {
+    loadMoreBtn.style.transform = 'translateY(0)';
+    loadMoreBtn.style.boxShadow = '0 4px 15px rgba(255, 77, 166, 0.2)';
+  };
+  
+  gossipContainer?.parentNode?.insertBefore(loadMoreBtn, gossipContainer?.nextSibling);
+}
+
+function updateLoadMoreButton() {
+  const loadMoreBtn = document.getElementById('load-more-btn');
+  if (loadMoreBtn) {
+    loadMoreBtn.disabled = isLoading;
+    loadMoreBtn.textContent = isLoading ? 'Loading... ✨' : 'Load More Gossip 💕';
+  }
+}
+
+function setupInfiniteScroll() {
+  // Add scroll event listener for infinite scroll
+  window.addEventListener('scroll', () => {
+    if (isLoading) return;
+    
+    const scrollPosition = window.innerHeight + window.scrollY;
+    const pageHeight = document.documentElement.scrollHeight;
+    const threshold = 100; // pixels from bottom
+    
+    if (scrollPosition >= pageHeight - threshold) {
+      loadGossipsPage(currentPage + 1);
+    }
+  });
+}
+
+// ====== SEARCH FUNCTIONALITY ======
+if (document.getElementById('searchInput')) {
+  const searchInput = document.getElementById('searchInput');
+  const searchBtn = document.getElementById('searchBtn');
+  
+  searchInput?.addEventListener('input', debounce(handleSearch, 300));
+  searchBtn?.addEventListener('click', handleSearch);
+}
+
+async function handleSearch() {
+  const searchInput = document.getElementById('searchInput');
+  const query = searchInput?.value.trim();
+  
+  if (!query) {
+    await loadGossips();
+    return;
+  }
+  
+  try {
+    showLoading();
+    
+    const response = await fetch(`${API_BASE}/gossips/search?q=${encodeURIComponent(query)}`);
+    if (!response.ok) throw new Error('Search failed');
+    
+    const gossips = await response.json();
+    
+    if (gossips.length === 0) {
+      showNoResultsMessage(query);
+    } else {
+      displaySearchResults(gossips, query);
+    }
+  } catch (error) {
+    console.error('Search error:', error);
+    showNotification('Search failed 💔', 'error');
+  }
+}
+
+function showNoResultsMessage(query) {
+  if (gossipContainer) {
+    gossipContainer.innerHTML = `
+      <div style="text-align: center; padding: 40px;">
+        <div style="font-size: 48px; color: #ff4da6; margin-bottom: 20px;">🔍</div>
+        <p style="color: #ff4da6; font-size: 18px; margin-bottom: 10px;">No gossips found for "${query}"</p>
+        <p style="color: #ff66b2;">Try different keywords or share the gossip yourself! 💖</p>
+      </div>
+    `;
+  }
+}
+
+function displaySearchResults(gossips, query) {
+  if (!gossipContainer) return;
+  
+  gossipContainer.innerHTML = '';
+  
+  // Highlight search terms in results
+  gossips.forEach(gossip => {
+    const card = createGossipCard(gossip);
+    
+    // Highlight matching text
+    const contentElement = card.querySelector('.card-content p');
+    if (contentElement) {
+      const text = contentElement.textContent;
+      const regex = new RegExp(`(${query})`, 'gi');
+      const highlighted = text.replace(regex, '<mark style="background-color: #ffebf3; color: #ff4da6; padding: 2px 4px; border-radius: 4px;">$1</mark>');
+      contentElement.innerHTML = highlighted;
+    }
+    
+    gossipContainer.appendChild(card);
+  });
+}
+
+function debounce(func, wait) {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
+
+// ====== EXPORT FOR GLOBAL USE ======
+// Make essential functions available globally
+window.toggleLike = toggleLike;
+window.toggleComments = toggleComments;
+window.postComment = postComment;
+window.sharePost = sharePost;
 window.toggleMenu = toggleMenu;
 window.editPost = editPost;
 window.reportPost = reportPost;
 window.deletePost = deletePost;
-window.toggleLike = toggleLike;
-window.toggleComments = toggleComments;
-window.postComment = postComment;
-window.likeComment = likeComment;
-window.sharePost = sharePost;
 window.loadGossips = loadGossips;
+window.openFullscreen = openFullscreen;
+
+// Show welcome message on first visit
+if (!localStorage.getItem('welcomeShown')) {
+  setTimeout(() => {
+    showNotification('Welcome to Diva Drama! Share your juiciest gossip 💋', 'success');
+    localStorage.setItem('welcomeShown', 'true');
+  }, 1000);
+}

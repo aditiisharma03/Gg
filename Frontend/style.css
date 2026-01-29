@@ -876,7 +876,7 @@ a {
 }
 
 .divas-card::before {
-  content: '👑';
+ 
   position: absolute;
   top: 25px; /* Adjusted position */
   right: 25px; /* Adjusted position */
