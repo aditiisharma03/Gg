@@ -532,7 +532,7 @@ function setupEventListeners() {
     gossipForm.addEventListener('submit', handleFormSubmit);
   }
   
-  // Load More button now opens gossip.html
+  // FIX 2: Load More button now opens gossip.html
   if (loadMoreBtn) {
     loadMoreBtn.addEventListener('click', (e) => {
       e.preventDefault();
@@ -569,6 +569,8 @@ async function loadGossips() {
     showError('Failed to load gossips');
   }
 }
+
+// REMOVED: loadMoreGossips function since we're redirecting to gossip.html
 
 function showLoading() {
   if (gossipContainer) {
@@ -707,9 +709,10 @@ function createGossipCard(gossip) {
     </div>
   `;
   
-  // Load comments from cache or server
+  // Load comments and reactions
   setTimeout(() => {
     loadComments(gossip.id);
+    loadReactions(gossip.id);
   }, 100);
   
   return card;
@@ -808,67 +811,44 @@ async function deletePost(gossipId) {
   toggleMenu(gossipId);
 }
 
-// ====== OPTIMIZED LIKE FUNCTIONS ======
+// ====== LIKE FUNCTIONS ======
 async function toggleLike(gossipId) {
   const isLiked = userReactions[gossipId]?.liked || false;
-  const likeBtn = document.querySelector(`.card[data-id="${gossipId}"] .like-btn`);
-  const likeCountElement = document.getElementById(`like-count-${gossipId}`);
-  
-  if (!likeBtn || !likeCountElement) return;
-  
-  // Show immediate feedback (optimistic update)
-  const currentCount = parseInt(likeCountElement.textContent) || 0;
-  const newCount = isLiked ? currentCount - 1 : currentCount + 1;
-  
-  // Update UI immediately
-  likeCountElement.textContent = newCount;
-  likeBtn.innerHTML = !isLiked ? 
-    `❤️ Liked <span class="like-count">${newCount}</span>` : 
-    `🤍 Like <span class="like-count">${newCount}</span>`;
-  likeBtn.classList.toggle('active', !isLiked);
-  
-  // Animation
-  likeBtn.style.transform = 'scale(1.1)';
-  setTimeout(() => likeBtn.style.transform = 'scale(1)', 200);
   
   try {
-    const endpoint = !isLiked ? 'add' : 'toggle';
-    const body = !isLiked ? 
-      JSON.stringify({ emoji: '❤️' }) : 
-      JSON.stringify({ emoji: '❤️', action: 'remove' });
-    
-    const response = await fetch(`${API_BASE}/gossips/${gossipId}/reactions/${endpoint}`, {
+    const response = await fetch(`${API_BASE}/gossips/${gossipId}/reactions/add`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: body
+      body: JSON.stringify({ emoji: '❤️' })
     });
     
     if (response.ok) {
-      const result = await response.json();
       userReactions[gossipId] = userReactions[gossipId] || {};
       userReactions[gossipId].liked = !isLiked;
       localStorage.setItem('userReactions', JSON.stringify(userReactions));
       
-      // Update with server count (in case of race conditions)
-      likeCountElement.textContent = result.count || newCount;
+      // Update UI
+      const likeBtn = document.querySelector(`.card[data-id="${gossipId}"] .like-btn`);
+      if (likeBtn) {
+        likeBtn.innerHTML = userReactions[gossipId].liked ? 
+          '❤️ Liked <span class="like-count">Loading...</span>' : 
+          '🤍 Like <span class="like-count">Loading...</span>';
+        likeBtn.classList.toggle('active', userReactions[gossipId].liked);
+        
+        // Animation
+        likeBtn.style.transform = 'scale(1.1)';
+        setTimeout(() => likeBtn.style.transform = 'scale(1)', 200);
+      }
       
-      showNotification(!isLiked ? 'Liked! ❤️' : 'Like removed', 'success');
-    } else {
-      // Rollback on error
-      likeCountElement.textContent = currentCount;
-      likeBtn.innerHTML = isLiked ? 
-        `❤️ Liked <span class="like-count">${currentCount}</span>` : 
-        `🤍 Like <span class="like-count">${currentCount}</span>`;
-      likeBtn.classList.toggle('active', isLiked);
-      throw new Error('Failed to update like');
+      // Update likes count
+      setTimeout(() => loadReactions(gossipId), 500);
+      showNotification(userReactions[gossipId].liked ? 'Liked! ❤️' : 'Like removed', 'success');
     }
   } catch (error) {
-    console.error('Error toggling like:', error);
     showNotification('Failed to update like 💔', 'error');
   }
 }
 
-// Simplified reaction loading - only loads when needed
 async function loadReactions(gossipId) {
   try {
     const response = await fetch(`${API_BASE}/gossips/${gossipId}/reactions`);
@@ -878,7 +858,7 @@ async function loadReactions(gossipId) {
     const likeReaction = reactions.find(r => r.emoji === '❤️');
     const likesCount = likeReaction ? likeReaction.count : 0;
     
-    const likeCountElement = document.getElementById(`like-count-${gossipId}`);
+    const likeCountElement = document.querySelector(`#like-count-${gossipId}`);
     if (likeCountElement) {
       likeCountElement.textContent = likesCount;
     }
@@ -887,7 +867,8 @@ async function loadReactions(gossipId) {
   }
 }
 
-// ====== OPTIMIZED COMMENT FUNCTIONS ======
+// ====== COMMENT FUNCTIONS ======
+// FIX 1: Fixed comment count issue
 async function toggleComments(gossipId) {
   const commentsSection = document.getElementById(`comments-${gossipId}`);
   const viewCommentsBtn = document.getElementById(`view-comments-${gossipId}`);
@@ -903,95 +884,72 @@ async function toggleComments(gossipId) {
     }
   }
   
+  // Get actual comment count correctly
+  try {
+    const response = await fetch(`${API_BASE}/gossips/${gossipId}/comments`);
+    if (response.ok) {
+      const comments = await response.json();
+      const commentCount = comments.length;
+      
+      // Update button text with correct count
+      const arrow = isExpanded ? '↓' : '↑';
+      const text = isExpanded ? 'View' : 'Hide';
+      viewCommentsBtn.innerHTML = `<span class="arrow">${arrow}</span> ${text} comments (${commentCount})`;
+    }
+  } catch (error) {
+    console.error('Error fetching comment count:', error);
+    // Fallback: count actual comment elements
+    const commentElements = commentsSection.querySelectorAll('.comment');
+    const commentCount = commentElements.length;
+    const arrow = isExpanded ? '↓' : '↑';
+    const text = isExpanded ? 'View' : 'Hide';
+    viewCommentsBtn.innerHTML = `<span class="arrow">${arrow}</span> ${text} comments (${commentCount})`;
+  }
+  
   // Toggle classes
   commentsSection.classList.toggle('expanded');
   viewCommentsBtn.classList.toggle('expanded');
-  
-  // Update button text
-  const arrow = isExpanded ? '↓' : '↑';
-  const text = isExpanded ? 'View' : 'Hide';
-  const commentCount = userComments[gossipId]?.length || 0;
-  viewCommentsBtn.innerHTML = `<span class="arrow">${arrow}</span> ${text} comments (${commentCount})`;
 }
 
 async function loadComments(gossipId) {
   const commentsContainer = document.getElementById(`comments-${gossipId}`);
   if (!commentsContainer) return;
   
-  // Check if we already have comments cached
-  if (userComments[gossipId] && userComments[gossipId].length > 0) {
-    displayCachedComments(gossipId);
-    return;
-  }
-  
   try {
     const response = await fetch(`${API_BASE}/gossips/${gossipId}/comments`);
     if (!response.ok) return;
     
     const comments = await response.json();
-    userComments[gossipId] = comments;
-    localStorage.setItem('userComments', JSON.stringify(userComments));
     
-    displayComments(gossipId, comments);
+    if (comments.length === 0) {
+      commentsContainer.innerHTML = '<div class="no-comments">No comments yet. Be the first! 💬</div>';
+      
+      // Update button with 0 count
+      const viewCommentsBtn = document.getElementById(`view-comments-${gossipId}`);
+      if (viewCommentsBtn) {
+        const isExpanded = viewCommentsBtn.classList.contains('expanded');
+        const arrow = isExpanded ? '↑' : '↓';
+        const text = isExpanded ? 'Hide' : 'View';
+        viewCommentsBtn.innerHTML = `<span class="arrow">${arrow}</span> ${text} comments (0)`;
+      }
+      return;
+    }
+    
+    commentsContainer.innerHTML = comments.map(comment => createCommentHTML(comment)).join('');
+    
+    // Update view comments button count
+    const viewCommentsBtn = document.getElementById(`view-comments-${gossipId}`);
+    if (viewCommentsBtn) {
+      const commentCount = comments.length;
+      const isExpanded = viewCommentsBtn.classList.contains('expanded');
+      const arrow = isExpanded ? '↑' : '↓';
+      const text = isExpanded ? 'Hide' : 'View';
+      viewCommentsBtn.innerHTML = `<span class="arrow">${arrow}</span> ${text} comments (${commentCount})`;
+    }
     
   } catch (error) {
     console.error('Error loading comments:', error);
     commentsContainer.innerHTML = '<div class="no-comments">Error loading comments 💔</div>';
-  }
-}
-
-function displayCachedComments(gossipId) {
-  const commentsContainer = document.getElementById(`comments-${gossipId}`);
-  const viewCommentsBtn = document.getElementById(`view-comments-${gossipId}`);
-  const comments = userComments[gossipId] || [];
-  
-  if (comments.length === 0) {
-    commentsContainer.innerHTML = '<div class="no-comments">No comments yet. Be the first! 💬</div>';
-    
-    if (viewCommentsBtn) {
-      const isExpanded = viewCommentsBtn.classList.contains('expanded');
-      const arrow = isExpanded ? '↑' : '↓';
-      const text = isExpanded ? 'Hide' : 'View';
-      viewCommentsBtn.innerHTML = `<span class="arrow">${arrow}</span> ${text} comments (0)`;
-    }
-    return;
-  }
-  
-  commentsContainer.innerHTML = comments.map(comment => createCommentHTML(comment)).join('');
-  
-  if (viewCommentsBtn) {
-    const commentCount = comments.length;
-    const isExpanded = viewCommentsBtn.classList.contains('expanded');
-    const arrow = isExpanded ? '↑' : '↓';
-    const text = isExpanded ? 'Hide' : 'View';
-    viewCommentsBtn.innerHTML = `<span class="arrow">${arrow}</span> ${text} comments (${commentCount})`;
-  }
-}
-
-function displayComments(gossipId, comments) {
-  const commentsContainer = document.getElementById(`comments-${gossipId}`);
-  const viewCommentsBtn = document.getElementById(`view-comments-${gossipId}`);
-  
-  if (comments.length === 0) {
-    commentsContainer.innerHTML = '<div class="no-comments">No comments yet. Be the first! 💬</div>';
-    
-    if (viewCommentsBtn) {
-      const isExpanded = viewCommentsBtn.classList.contains('expanded');
-      const arrow = isExpanded ? '↑' : '↓';
-      const text = isExpanded ? 'Hide' : 'View';
-      viewCommentsBtn.innerHTML = `<span class="arrow">${arrow}</span> ${text} comments (0)`;
-    }
-    return;
-  }
-  
-  commentsContainer.innerHTML = comments.map(comment => createCommentHTML(comment)).join('');
-  
-  if (viewCommentsBtn) {
-    const commentCount = comments.length;
-    const isExpanded = viewCommentsBtn.classList.contains('expanded');
-    const arrow = isExpanded ? '↑' : '↓';
-    const text = isExpanded ? 'Hide' : 'View';
-    viewCommentsBtn.innerHTML = `<span class="arrow">${arrow}</span> ${text} comments (${commentCount})`;
   }
 }
 
@@ -1039,15 +997,8 @@ async function postComment(gossipId) {
       // Clear input
       input.value = '';
       
-      // Add comment to cache
-      if (!userComments[gossipId]) {
-        userComments[gossipId] = [];
-      }
-      userComments[gossipId].unshift(result.comment);
-      localStorage.setItem('userComments', JSON.stringify(userComments));
-      
-      // Update display
-      displayComments(gossipId, userComments[gossipId]);
+      // Reload comments to get updated list and count
+      await loadComments(gossipId);
       
       showNotification('Comment posted! 💬', 'success');
       
@@ -1059,7 +1010,16 @@ async function postComment(gossipId) {
         commentsSection.classList.add('expanded');
         if (viewCommentsBtn) {
           viewCommentsBtn.classList.add('expanded');
-          viewCommentsBtn.innerHTML = `<span class="arrow">↑</span> Hide comments (${userComments[gossipId].length})`;
+          // Get updated count for the button
+          try {
+            const countResponse = await fetch(`${API_BASE}/gossips/${gossipId}/comments`);
+            if (countResponse.ok) {
+              const comments = await countResponse.json();
+              viewCommentsBtn.innerHTML = `<span class="arrow">↑</span> Hide comments (${comments.length})`;
+            }
+          } catch (error) {
+            viewCommentsBtn.innerHTML = `<span class="arrow">↑</span> Hide comments`;
+          }
         }
       }
     }
@@ -1119,7 +1079,7 @@ async function handleFormSubmit(e) {
       body: formData
     });
     
-    const result = await response.json();
+        const result = await response.json();
     
     if (response.ok && result.id) {
       // Reset form
@@ -1210,6 +1170,7 @@ async function initializeInfiniteScroll() {
     addLoadMoreButton();
   } catch (error) {
     console.error('Error initializing infinite scroll:', error);
+   
   }
 }
 
@@ -1453,53 +1414,6 @@ function debounce(func, wait) {
   };
 }
 
-// ====== SIMPLE POLLING FOR REAL-TIME UPDATES ======
- // ====== SIMPLE POLLING FOR REAL-TIME UPDATES ======
-// Simple polling to update like counts without page refresh
-function startPollingForUpdates() {
-  // Only poll if we're on a page with gossips
-  if (!gossipContainer) return;
-  
-  setInterval(async () => {
-    // Update like counts for displayed gossips
-    displayedGossips.forEach(async (gossip) => {
-      try {
-        const response = await fetch(`${API_BASE}/gossips/${gossip.id}/reactions`);
-        if (response.ok) {
-          const reactions = await response.json();
-          const likeReaction = reactions.find(r => r.emoji === '❤️');
-          const likesCount = likeReaction ? likeReaction.count : 0;
-          
-          const likeCountElement = document.getElementById(`like-count-${gossip.id}`);
-          if (likeCountElement) {
-            // Only update if the count has changed
-            const currentCount = parseInt(likeCountElement.textContent) || 0;
-            if (currentCount !== likesCount) {
-              likeCountElement.textContent = likesCount;
-              
-              // Also update the like button state
-              const likeBtn = document.querySelector(`.card[data-id="${gossip.id}"] .like-btn`);
-              if (likeBtn) {
-                const isLiked = userReactions[gossip.id]?.liked || false;
-                likeBtn.classList.toggle('active', isLiked);
-                likeBtn.innerHTML = isLiked ? 
-                  `❤️ Liked <span class="like-count">${likesCount}</span>` : 
-                  `🤍 Like <span class="like-count">${likesCount}</span>`;
-              }
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Error polling for updates:', error);
-      }
-    });
-  }, 10000); // Poll every 10 seconds
-}
-
-// Initialize polling
-if (gossipContainer) {
-  setTimeout(startPollingForUpdates, 5000); // Start after 5 seconds
-}
 // ====== EXPORT FOR GLOBAL USE ======
 // Make essential functions available globally
 window.toggleLike = toggleLike;
