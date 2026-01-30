@@ -1454,6 +1454,7 @@ function debounce(func, wait) {
 }
 
 // ====== SIMPLE POLLING FOR REAL-TIME UPDATES ======
+ // ====== SIMPLE POLLING FOR REAL-TIME UPDATES ======
 // Simple polling to update like counts without page refresh
 function startPollingForUpdates() {
   // Only poll if we're on a page with gossips
@@ -1475,6 +1476,16 @@ function startPollingForUpdates() {
             const currentCount = parseInt(likeCountElement.textContent) || 0;
             if (currentCount !== likesCount) {
               likeCountElement.textContent = likesCount;
+              
+              // Also update the like button state
+              const likeBtn = document.querySelector(`.card[data-id="${gossip.id}"] .like-btn`);
+              if (likeBtn) {
+                const isLiked = userReactions[gossip.id]?.liked || false;
+                likeBtn.classList.toggle('active', isLiked);
+                likeBtn.innerHTML = isLiked ? 
+                  `❤️ Liked <span class="like-count">${likesCount}</span>` : 
+                  `🤍 Like <span class="like-count">${likesCount}</span>`;
+              }
             }
           }
         }
@@ -1489,7 +1500,6 @@ function startPollingForUpdates() {
 if (gossipContainer) {
   setTimeout(startPollingForUpdates, 5000); // Start after 5 seconds
 }
-
 // ====== EXPORT FOR GLOBAL USE ======
 // Make essential functions available globally
 window.toggleLike = toggleLike;

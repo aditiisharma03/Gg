@@ -3,42 +3,18 @@ const fileUpload = require("express-fileupload");
 const path = require("path");
 const cors = require("cors");
 const db = require("./db"); // Your MySQL connection
-const WebSocket = require('ws');
-const http = require('http');
+
+// Remove WebSocket for Render compatibility
+// const WebSocket = require('ws');
+// const http = require('http');
 
 const app = express();
-const server = http.createServer(app);
+// const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
 
-// ====== WEBSOCKET SETUP ======
-const wss = new WebSocket.Server({ server });
-
-// Store connected clients
-const clients = new Set();
-
-wss.on('connection', (ws) => {
-  console.log('Client connected');
-  clients.add(ws);
-  
-  ws.on('close', () => {
-    console.log('Client disconnected');
-    clients.delete(ws);
-  });
-  
-  ws.on('error', (error) => {
-    console.error('WebSocket error:', error);
-  });
-});
-
-// Broadcast function for real-time updates
-function broadcastUpdate(data) {
-  const message = JSON.stringify(data);
-  clients.forEach(client => {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(message);
-    }
-  });
-}
+// ====== REMOVED WEBSOCKET SETUP FOR RENDER COMPATIBILITY ======
+// Render doesn't support WebSocket on free tier easily
+// We'll use polling instead
 
 // ====== MIDDLEWARE ======
 app.use(cors({
@@ -97,33 +73,6 @@ app.get("/gossips/latest", async (req, res) => {
       ORDER BY g.created_at DESC 
       LIMIT ?
     `, [limit]);
-    
-    // Only load comments if specifically requested
-    if (req.query.withComments === 'true') {
-      const gossipIds = gossips.map(g => g.id);
-      if (gossipIds.length > 0) {
-        const [comments] = await db.promise().query(`
-          SELECT * FROM gossip_comments 
-          WHERE gossip_id IN (?) 
-          ORDER BY created_at DESC
-          LIMIT 10
-        `, [gossipIds]);
-        
-        // Group comments by gossip_id
-        const commentsByGossip = {};
-        comments.forEach(comment => {
-          if (!commentsByGossip[comment.gossip_id]) {
-            commentsByGossip[comment.gossip_id] = [];
-          }
-          commentsByGossip[comment.gossip_id].push(comment);
-        });
-        
-        // Attach limited comments to each gossip
-        gossips.forEach(gossip => {
-          gossip.comments = commentsByGossip[gossip.id]?.slice(0, 3) || []; // Only first 3 comments
-        });
-      }
-    }
     
     res.json(gossips);
   } catch (err) {
@@ -304,12 +253,6 @@ app.post("/gossips", async (req, res) => {
       await connection.commit();
       connection.release();
 
-      // Broadcast new gossip to all connected clients
-      broadcastUpdate({
-        type: 'NEW_GOSSIP',
-        gossip: newGossip[0]
-      });
-
       res.json({ 
         success: true, 
         id: gossipId, 
@@ -364,13 +307,6 @@ app.put("/gossips/:id", async (req, res) => {
       ) gc ON g.id = gc.gossip_id
       WHERE g.id = ?
     `, [req.params.id, req.params.id, req.params.id]);
-    
-    // Broadcast update
-    broadcastUpdate({
-      type: 'UPDATE_GOSSIP',
-      gossipId: req.params.id,
-      gossip: updatedGossip[0]
-    });
     
     res.json({ success: true, gossip: updatedGossip[0] });
   } catch (err) {
@@ -428,12 +364,6 @@ app.delete("/gossips/:id", async (req, res) => {
       
       await connection.commit();
       connection.release();
-      
-      // Broadcast deletion
-      broadcastUpdate({
-        type: 'DELETE_GOSSIP',
-        gossipId: req.params.id
-      });
       
       res.json({ success: true });
       
@@ -560,13 +490,6 @@ app.post("/gossips/:id/comments", async (req, res) => {
       "SELECT * FROM gossip_comments WHERE id = ?",
       [result.insertId]
     );
-
-    // Broadcast new comment
-    broadcastUpdate({
-      type: 'NEW_COMMENT',
-      gossipId: gossipId,
-      comment: newComment[0]
-    });
 
     res.json({ success: true, comment: newComment[0] });
   } catch (err) {
@@ -699,15 +622,6 @@ app.post("/gossips/:id/reactions", async (req, res) => {
       [gossipId]
     );
 
-    // Broadcast reaction update
-    broadcastUpdate({
-      type: 'REACTION_UPDATE',
-      gossipId: gossipId,
-      emoji: emoji,
-      count: newCount || 0,
-      totalReactions: total || 0
-    });
-
     res.json({ 
       success: true, 
       count: newCount || 0,
@@ -807,8 +721,7 @@ app.get("/health", (req, res) => {
   res.json({ 
     status: "healthy", 
     timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    websocketClients: clients.size
+    uptime: process.uptime()
   });
 });
 
@@ -860,27 +773,19 @@ app.use((req, res) => {
 app.use((err, req, res, next) => {
   console.error(err.stack);
   
-  if (err instanceof multer.MulterError) {
-    if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ error: "File too large (max 10MB)" });
-    }
+  // Handle multer errors if you're using it
+  if (err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(400).json({ error: "File too large (max 10MB)" });
   }
   
   res.status(500).json({ error: "Something went wrong!" });
 });
 
 // ===== START SERVER =====
-server.listen(PORT, () => {
+app.listen(PORT, () => {
   console.log(`💖 Server running on port ${PORT}`);
-  console.log(`📡 WebSocket server ready for real-time updates`);
 });
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received. Closing server...');
-  wss.close();
-  server.close(() => {
-    console.log('Server closed');
-    process.exit(0);
-  });
-});
+// ===== UPDATE package.json FOR RENDER =====
+// Also update your package.json to remove ws dependency:
+// Remove "ws" from dependencies
