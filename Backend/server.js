@@ -3,52 +3,179 @@ const fileUpload = require("express-fileupload");
 const path = require("path");
 const cors = require("cors");
 const db = require("./db"); // Your MySQL connection
+const WebSocket = require('ws');
+const http = require('http');
 
 const app = express();
+const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
 
+// ====== WEBSOCKET SETUP ======
+const wss = new WebSocket.Server({ server });
+
+// Store connected clients
+const clients = new Set();
+
+wss.on('connection', (ws) => {
+  console.log('Client connected');
+  clients.add(ws);
+  
+  ws.on('close', () => {
+    console.log('Client disconnected');
+    clients.delete(ws);
+  });
+  
+  ws.on('error', (error) => {
+    console.error('WebSocket error:', error);
+  });
+});
+
+// Broadcast function for real-time updates
+function broadcastUpdate(data) {
+  const message = JSON.stringify(data);
+  clients.forEach(client => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(message);
+    }
+  });
+}
+
 // ====== MIDDLEWARE ======
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(fileUpload());
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(fileUpload({
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  useTempFiles: true,
+  tempFileDir: '/tmp/'
+}));
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+// Add cache control headers
+app.use((req, res, next) => {
+  // Cache static assets for 1 year
+  if (req.path.startsWith('/uploads/')) {
+    res.setHeader('Cache-Control', 'public, max-age=31536000');
+  }
+  // Cache API responses for 5 seconds
+  else if (req.path.startsWith('/gossips/')) {
+    res.setHeader('Cache-Control', 'public, max-age=5');
+  }
+  next();
+});
 
 // ====== ROUTES ======
 app.get("/", (req, res) => res.send("Gossip Backend is running 💖"));
 
-// ===== GOSSIPS =====
-// Get latest gossips (for home page)
+// ===== OPTIMIZED GOSSIPS ENDPOINTS =====
+// Get latest gossips (optimized with comments)
 app.get("/gossips/latest", async (req, res) => {
   try {
-    const [rows] = await db.promise().query(
-      `SELECT g.*, 
-        (SELECT SUM(count) FROM gossip_reactions WHERE gossip_id = g.id) as total_reactions,
-        (SELECT COUNT(*) FROM gossip_comments WHERE gossip_id = g.id) as comment_count
-       FROM gossips g 
-       ORDER BY g.created_at DESC 
-       LIMIT 3`
-    );
-    res.json(rows);
+    const limit = parseInt(req.query.limit) || 3;
+    
+    // Use a single optimized query
+    const [gossips] = await db.promise().query(`
+      SELECT 
+        g.*,
+        COALESCE(gr.total_reactions, 0) as total_reactions,
+        COALESCE(gc.comment_count, 0) as comment_count
+      FROM gossips g
+      LEFT JOIN (
+        SELECT gossip_id, SUM(count) as total_reactions 
+        FROM gossip_reactions 
+        GROUP BY gossip_id
+      ) gr ON g.id = gr.gossip_id
+      LEFT JOIN (
+        SELECT gossip_id, COUNT(*) as comment_count 
+        FROM gossip_comments 
+        GROUP BY gossip_id
+      ) gc ON g.id = gc.gossip_id
+      ORDER BY g.created_at DESC 
+      LIMIT ?
+    `, [limit]);
+    
+    // Only load comments if specifically requested
+    if (req.query.withComments === 'true') {
+      const gossipIds = gossips.map(g => g.id);
+      if (gossipIds.length > 0) {
+        const [comments] = await db.promise().query(`
+          SELECT * FROM gossip_comments 
+          WHERE gossip_id IN (?) 
+          ORDER BY created_at DESC
+          LIMIT 10
+        `, [gossipIds]);
+        
+        // Group comments by gossip_id
+        const commentsByGossip = {};
+        comments.forEach(comment => {
+          if (!commentsByGossip[comment.gossip_id]) {
+            commentsByGossip[comment.gossip_id] = [];
+          }
+          commentsByGossip[comment.gossip_id].push(comment);
+        });
+        
+        // Attach limited comments to each gossip
+        gossips.forEach(gossip => {
+          gossip.comments = commentsByGossip[gossip.id]?.slice(0, 3) || []; // Only first 3 comments
+        });
+      }
+    }
+    
+    res.json(gossips);
   } catch (err) {
-    console.error(err);
+    console.error("Error in /gossips/latest:", err);
     res.status(500).json({ error: "Database error" });
   }
 });
 
-// Get all gossips
+// Get all gossips with pagination
 app.get("/gossips", async (req, res) => {
   try {
-    const [rows] = await db.promise().query(
-      `SELECT g.*, 
-        (SELECT SUM(count) FROM gossip_reactions WHERE gossip_id = g.id) as total_reactions,
-        (SELECT COUNT(*) FROM gossip_comments WHERE gossip_id = g.id) as comment_count
-       FROM gossips g 
-       ORDER BY g.created_at DESC`
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = (page - 1) * limit;
+    
+    // Get total count for pagination
+    const [[{ total }]] = await db.promise().query(
+      "SELECT COUNT(*) as total FROM gossips"
     );
-    res.json(rows);
+    
+    // Get paginated gossips with counts
+    const [rows] = await db.promise().query(`
+      SELECT 
+        g.*,
+        COALESCE(gr.total_reactions, 0) as total_reactions,
+        COALESCE(gc.comment_count, 0) as comment_count
+      FROM gossips g
+      LEFT JOIN (
+        SELECT gossip_id, SUM(count) as total_reactions 
+        FROM gossip_reactions 
+        GROUP BY gossip_id
+      ) gr ON g.id = gr.gossip_id
+      LEFT JOIN (
+        SELECT gossip_id, COUNT(*) as comment_count 
+        FROM gossip_comments 
+        GROUP BY gossip_id
+      ) gc ON g.id = gc.gossip_id
+      ORDER BY g.created_at DESC 
+      LIMIT ? OFFSET ?
+    `, [limit, offset]);
+    
+    res.json({
+      gossips: rows,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit)
+      }
+    });
   } catch (err) {
-    console.error(err);
+    console.error("Error in /gossips:", err);
     res.status(500).json({ error: "Database error" });
   }
 });
@@ -56,20 +183,34 @@ app.get("/gossips", async (req, res) => {
 // Get single gossip by ID
 app.get("/gossips/:id", async (req, res) => {
   try {
-    const [rows] = await db.promise().query(
-      `SELECT g.*, 
-        (SELECT SUM(count) FROM gossip_reactions WHERE gossip_id = g.id) as total_reactions,
-        (SELECT COUNT(*) FROM gossip_comments WHERE gossip_id = g.id) as comment_count
-       FROM gossips g 
-       WHERE g.id = ?`,
-      [req.params.id]
-    );
+    const [rows] = await db.promise().query(`
+      SELECT 
+        g.*,
+        COALESCE(gr.total_reactions, 0) as total_reactions,
+        COALESCE(gc.comment_count, 0) as comment_count
+      FROM gossips g
+      LEFT JOIN (
+        SELECT gossip_id, SUM(count) as total_reactions 
+        FROM gossip_reactions 
+        WHERE gossip_id = ?
+        GROUP BY gossip_id
+      ) gr ON g.id = gr.gossip_id
+      LEFT JOIN (
+        SELECT gossip_id, COUNT(*) as comment_count 
+        FROM gossip_comments 
+        WHERE gossip_id = ?
+        GROUP BY gossip_id
+      ) gc ON g.id = gc.gossip_id
+      WHERE g.id = ?
+    `, [req.params.id, req.params.id, req.params.id]);
+    
     if (rows.length === 0) {
       return res.status(404).json({ error: "Gossip not found" });
     }
+    
     res.json(rows[0]);
   } catch (err) {
-    console.error(err);
+    console.error("Error in /gossips/:id:", err);
     res.status(500).json({ error: "Database error" });
   }
 });
@@ -78,49 +219,111 @@ app.get("/gossips/:id", async (req, res) => {
 app.post("/gossips", async (req, res) => {
   try {
     const { diva_name, content } = req.body;
-    if (!content?.trim()) return res.status(400).json({ error: "Content required" });
+    
+    if (!content?.trim()) {
+      return res.status(400).json({ error: "Content required" });
+    }
+
+    if (content.length > 1000) {
+      return res.status(400).json({ error: "Content too long (max 1000 characters)" });
+    }
 
     let media_path = null;
     if (req.files?.media) {
       const file = req.files.media;
+      
+      // Validate file type
+      const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'video/mp4', 'video/webm'];
+      if (!allowedTypes.includes(file.mimetype)) {
+        return res.status(400).json({ error: "Invalid file type" });
+      }
+      
+      // Validate file size (max 10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        return res.status(400).json({ error: "File too large (max 10MB)" });
+      }
+      
       const fs = require("fs");
       const uploadDir = path.join(__dirname, "uploads");
-      if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
+      
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      }
 
-      const uploadPath = path.join(uploadDir, Date.now() + "_" + file.name);
+      const uniqueName = Date.now() + "_" + Math.random().toString(36).substring(7) + path.extname(file.name);
+      const uploadPath = path.join(uploadDir, uniqueName);
+      
       await file.mv(uploadPath);
-      media_path = "/uploads/" + path.basename(uploadPath);
+      media_path = "/uploads/" + uniqueName;
     }
 
-    const [result] = await db.promise().query(
-      "INSERT INTO gossips (diva_name, content, media_path, created_at) VALUES (?, ?, ?, NOW())",
-      [diva_name || "Anonymous", content, media_path]
-    );
-
-    const gossipId = result.insertId;
-
-    // Initialize reactions with default emojis
-    const defaultEmojis = ["❤️", "😂", "😮", "😡", "😢"];
-    for (let emoji of defaultEmojis) {
-      await db.promise().query(
-        "INSERT INTO gossip_reactions (gossip_id, emoji, count) VALUES (?, ?, 0)",
-        [gossipId, emoji]
+    // Start transaction
+    const connection = await db.promise().getConnection();
+    
+    try {
+      await connection.beginTransaction();
+      
+      const [result] = await connection.query(
+        "INSERT INTO gossips (diva_name, content, media_path, created_at) VALUES (?, ?, ?, NOW())",
+        [diva_name || "Anonymous", content.trim(), media_path]
       );
+
+      const gossipId = result.insertId;
+
+      // Initialize reactions with default emojis
+      const defaultEmojis = ["❤️", "😂", "😮", "😡", "😢"];
+      for (let emoji of defaultEmojis) {
+        await connection.query(
+          "INSERT INTO gossip_reactions (gossip_id, emoji, count) VALUES (?, ?, 0)",
+          [gossipId, emoji]
+        );
+      }
+
+      // Get the newly created gossip with counts
+      const [newGossip] = await connection.query(`
+        SELECT 
+          g.*,
+          COALESCE(gr.total_reactions, 0) as total_reactions,
+          COALESCE(gc.comment_count, 0) as comment_count
+        FROM gossips g
+        LEFT JOIN (
+          SELECT gossip_id, SUM(count) as total_reactions 
+          FROM gossip_reactions 
+          WHERE gossip_id = ?
+          GROUP BY gossip_id
+        ) gr ON g.id = gr.gossip_id
+        LEFT JOIN (
+          SELECT gossip_id, COUNT(*) as comment_count 
+          FROM gossip_comments 
+          WHERE gossip_id = ?
+          GROUP BY gossip_id
+        ) gc ON g.id = gc.gossip_id
+        WHERE g.id = ?
+      `, [gossipId, gossipId, gossipId]);
+
+      await connection.commit();
+      connection.release();
+
+      // Broadcast new gossip to all connected clients
+      broadcastUpdate({
+        type: 'NEW_GOSSIP',
+        gossip: newGossip[0]
+      });
+
+      res.json({ 
+        success: true, 
+        id: gossipId, 
+        gossip: newGossip[0] 
+      });
+      
+    } catch (error) {
+      await connection.rollback();
+      connection.release();
+      throw error;
     }
-
-    // Fetch the newly created gossip with counts
-    const [newGossip] = await db.promise().query(
-      `SELECT g.*, 
-        (SELECT SUM(count) FROM gossip_reactions WHERE gossip_id = g.id) as total_reactions,
-        (SELECT COUNT(*) FROM gossip_comments WHERE gossip_id = g.id) as comment_count
-       FROM gossips g 
-       WHERE g.id = ?`,
-      [gossipId]
-    );
-
-    res.json({ success: true, id: gossipId, gossip: newGossip[0] });
+    
   } catch (err) {
-    console.error(err);
+    console.error("Error in POST /gossips:", err);
     res.status(500).json({ error: "Failed to post gossip" });
   }
 });
@@ -131,24 +334,47 @@ app.put("/gossips/:id", async (req, res) => {
     const { content } = req.body;
     if (!content?.trim()) return res.status(400).json({ error: "Content required" });
 
-    await db.promise().query(
+    const [result] = await db.promise().query(
       "UPDATE gossips SET content = ? WHERE id = ?",
       [content, req.params.id]
     );
     
-    // Return updated gossip with counts
-    const [updatedGossip] = await db.promise().query(
-      `SELECT g.*, 
-        (SELECT SUM(count) FROM gossip_reactions WHERE gossip_id = g.id) as total_reactions,
-        (SELECT COUNT(*) FROM gossip_comments WHERE gossip_id = g.id) as comment_count
-       FROM gossips g 
-       WHERE g.id = ?`,
-      [req.params.id]
-    );
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Gossip not found" });
+    }
+    
+    // Get updated gossip with counts
+    const [updatedGossip] = await db.promise().query(`
+      SELECT 
+        g.*,
+        COALESCE(gr.total_reactions, 0) as total_reactions,
+        COALESCE(gc.comment_count, 0) as comment_count
+      FROM gossips g
+      LEFT JOIN (
+        SELECT gossip_id, SUM(count) as total_reactions 
+        FROM gossip_reactions 
+        WHERE gossip_id = ?
+        GROUP BY gossip_id
+      ) gr ON g.id = gr.gossip_id
+      LEFT JOIN (
+        SELECT gossip_id, COUNT(*) as comment_count 
+        FROM gossip_comments 
+        WHERE gossip_id = ?
+        GROUP BY gossip_id
+      ) gc ON g.id = gc.gossip_id
+      WHERE g.id = ?
+    `, [req.params.id, req.params.id, req.params.id]);
+    
+    // Broadcast update
+    broadcastUpdate({
+      type: 'UPDATE_GOSSIP',
+      gossipId: req.params.id,
+      gossip: updatedGossip[0]
+    });
     
     res.json({ success: true, gossip: updatedGossip[0] });
   } catch (err) {
-    console.error(err);
+    console.error("Error in PUT /gossips/:id:", err);
     res.status(500).json({ error: "Failed to edit post" });
   }
 });
@@ -156,17 +382,68 @@ app.put("/gossips/:id", async (req, res) => {
 // Delete gossip
 app.delete("/gossips/:id", async (req, res) => {
   try {
-    // First delete related data (comments, reactions)
-    await db.promise().query("DELETE FROM gossip_comments WHERE gossip_id = ?", [req.params.id]);
-    await db.promise().query("DELETE FROM gossip_reactions WHERE gossip_id = ?", [req.params.id]);
-    await db.promise().query("DELETE FROM reported_gossips WHERE gossip_id = ?", [req.params.id]);
+    // Start transaction
+    const connection = await db.promise().getConnection();
     
-    // Then delete the gossip
-    await db.promise().query("DELETE FROM gossips WHERE id = ?", [req.params.id]);
-    
-    res.json({ success: true });
+    try {
+      await connection.beginTransaction();
+      
+      // First delete related data
+      await connection.query("DELETE FROM gossip_comments WHERE gossip_id = ?", [req.params.id]);
+      await connection.query("DELETE FROM gossip_reactions WHERE gossip_id = ?", [req.params.id]);
+      await connection.query("DELETE FROM reported_gossips WHERE gossip_id = ?", [req.params.id]);
+      
+      // Get media path before deleting gossip
+      const [[gossip]] = await connection.query(
+        "SELECT media_path FROM gossips WHERE id = ?",
+        [req.params.id]
+      );
+      
+      if (!gossip) {
+        await connection.rollback();
+        connection.release();
+        return res.status(404).json({ error: "Gossip not found" });
+      }
+      
+      // Delete the gossip
+      const [result] = await connection.query(
+        "DELETE FROM gossips WHERE id = ?",
+        [req.params.id]
+      );
+      
+      if (result.affectedRows === 0) {
+        await connection.rollback();
+        connection.release();
+        return res.status(404).json({ error: "Gossip not found" });
+      }
+      
+      // Delete associated media file if exists
+      if (gossip.media_path) {
+        const fs = require("fs");
+        const filePath = path.join(__dirname, gossip.media_path);
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+      }
+      
+      await connection.commit();
+      connection.release();
+      
+      // Broadcast deletion
+      broadcastUpdate({
+        type: 'DELETE_GOSSIP',
+        gossipId: req.params.id
+      });
+      
+      res.json({ success: true });
+      
+    } catch (error) {
+      await connection.rollback();
+      connection.release();
+      throw error;
+    }
   } catch (err) {
-    console.error(err);
+    console.error("Error in DELETE /gossips/:id:", err);
     res.status(500).json({ error: "Failed to delete post" });
   }
 });
@@ -179,6 +456,10 @@ app.post("/gossips/:id/report", async (req, res) => {
 
     if (!reason?.trim()) {
       return res.status(400).json({ error: "Report reason required" });
+    }
+
+    if (reason.length > 500) {
+      return res.status(400).json({ error: "Reason too long (max 500 characters)" });
     }
 
     // Check if gossip exists
@@ -212,6 +493,7 @@ app.get("/admin/reports", async (req, res) => {
       FROM reported_gossips rg
       JOIN gossips g ON rg.gossip_id = g.id
       ORDER BY rg.reported_at DESC
+      LIMIT 100
     `);
     res.json(reports);
   } catch (err) {
@@ -220,17 +502,37 @@ app.get("/admin/reports", async (req, res) => {
   }
 });
 
-// ===== COMMENTS =====
+// ===== OPTIMIZED COMMENTS =====
 app.get("/gossips/:id/comments", async (req, res) => {
   try {
     const gossipId = req.params.id;
-    const [rows] = await db.promise().query(
-      "SELECT * FROM gossip_comments WHERE gossip_id = ? ORDER BY created_at DESC",
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = (page - 1) * limit;
+    
+    // Get total count
+    const [[{ total }]] = await db.promise().query(
+      "SELECT COUNT(*) as total FROM gossip_comments WHERE gossip_id = ?",
       [gossipId]
     );
-    res.json(rows);
+    
+    // Get paginated comments
+    const [rows] = await db.promise().query(
+      "SELECT * FROM gossip_comments WHERE gossip_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+      [gossipId, limit, offset]
+    );
+    
+    res.json({
+      comments: rows,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit)
+      }
+    });
   } catch (err) {
-    console.error(err);
+    console.error("Error in /gossips/:id/comments:", err);
     res.status(500).json({ error: "Failed to fetch comments" });
   }
 });
@@ -240,12 +542,17 @@ app.post("/gossips/:id/comments", async (req, res) => {
     const gossipId = req.params.id;
     const { commenter_name, comment } = req.body;
 
-    if (!comment?.trim()) 
+    if (!comment?.trim()) {
       return res.status(400).json({ error: "Comment required" });
+    }
+
+    if (comment.length > 500) {
+      return res.status(400).json({ error: "Comment too long (max 500 characters)" });
+    }
 
     const [result] = await db.promise().query(
       "INSERT INTO gossip_comments (gossip_id, commenter_name, comment, created_at) VALUES (?, ?, ?, NOW())",
-      [gossipId, commenter_name || "Anonymous", comment]
+      [gossipId, commenter_name || "Anonymous", comment.trim()]
     );
 
     // Get the newly created comment
@@ -253,6 +560,13 @@ app.post("/gossips/:id/comments", async (req, res) => {
       "SELECT * FROM gossip_comments WHERE id = ?",
       [result.insertId]
     );
+
+    // Broadcast new comment
+    broadcastUpdate({
+      type: 'NEW_COMMENT',
+      gossipId: gossipId,
+      comment: newComment[0]
+    });
 
     res.json({ success: true, comment: newComment[0] });
   } catch (err) {
@@ -267,10 +581,15 @@ app.put("/gossips/:gossipId/comments/:commentId", async (req, res) => {
     const { comment } = req.body;
     if (!comment?.trim()) return res.status(400).json({ error: "Comment required" });
 
-    await db.promise().query(
+    const [result] = await db.promise().query(
       "UPDATE gossip_comments SET comment = ? WHERE id = ?",
       [comment, req.params.commentId]
     );
+    
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Comment not found" });
+    }
+    
     res.json({ success: true });
   } catch (err) {
     console.error(err);
@@ -281,10 +600,15 @@ app.put("/gossips/:gossipId/comments/:commentId", async (req, res) => {
 // Delete comment
 app.delete("/gossips/:gossipId/comments/:commentId", async (req, res) => {
   try {
-    await db.promise().query(
+    const [result] = await db.promise().query(
       "DELETE FROM gossip_comments WHERE id = ?",
       [req.params.commentId]
     );
+    
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "Comment not found" });
+    }
+    
     res.json({ success: true });
   } catch (err) {
     console.error(err);
@@ -292,95 +616,108 @@ app.delete("/gossips/:gossipId/comments/:commentId", async (req, res) => {
   }
 });
 
-// ===== REACTIONS =====
+// ===== OPTIMIZED REACTIONS =====
 app.get("/gossips/:id/reactions", async (req, res) => {
   try {
     const [rows] = await db.promise().query(
-      "SELECT emoji, count FROM gossip_reactions WHERE gossip_id = ? ORDER BY emoji",
+      "SELECT emoji, count FROM gossip_reactions WHERE gossip_id = ? ORDER BY count DESC",
       [req.params.id]
     );
     res.json(rows);
   } catch (err) {
-    console.error(err);
+    console.error("Error in /gossips/:id/reactions:", err);
     res.status(500).json({ error: "Failed to fetch reactions" });
   }
 });
 
-// Toggle reaction (like/unlike)
-app.post("/gossips/:id/reactions/toggle", async (req, res) => {
+// Unified reaction handler
+app.post("/gossips/:id/reactions", async (req, res) => {
   try {
-    const { emoji, action } = req.body;
-    if (!emoji || !["add", "remove"].includes(action)) {
-      return res.status(400).json({ error: "Invalid emoji/action" });
-    }
-
-    const delta = action === "add" ? 1 : -1;
+    const { emoji, action = 'toggle' } = req.body;
     
-    // Update reaction count
-    await db.promise().query(
-      "UPDATE gossip_reactions SET count = GREATEST(0, count + ?) WHERE gossip_id = ? AND emoji = ?",
-      [delta, req.params.id, emoji]
-    );
-
-    // Get updated counts
-    const [updated] = await db.promise().query(
-      "SELECT emoji, count FROM gossip_reactions WHERE gossip_id = ? AND emoji = ?",
-      [req.params.id, emoji]
-    );
-
-    res.json({ 
-      success: true, 
-      count: updated[0]?.count || 0,
-      emoji 
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to toggle reaction" });
-  }
-});
-
-// Add specific reaction (for quick reaction buttons)
-app.post("/gossips/:id/reactions/add", async (req, res) => {
-  try {
-    const { emoji } = req.body;
     if (!emoji) {
       return res.status(400).json({ error: "Emoji required" });
     }
 
+    // Validate action
+    if (!['toggle', 'add', 'remove'].includes(action)) {
+      return res.status(400).json({ error: "Invalid action" });
+    }
+
+    const gossipId = req.params.id;
+    
+    // Check if gossip exists
+    const [gossip] = await db.promise().query(
+      "SELECT id FROM gossips WHERE id = ?",
+      [gossipId]
+    );
+    
+    if (gossip.length === 0) {
+      return res.status(404).json({ error: "Gossip not found" });
+    }
+
     // Check if reaction exists
     const [existing] = await db.promise().query(
-      "SELECT id FROM gossip_reactions WHERE gossip_id = ? AND emoji = ?",
-      [req.params.id, emoji]
+      "SELECT id, count FROM gossip_reactions WHERE gossip_id = ? AND emoji = ?",
+      [gossipId, emoji]
     );
 
+    let newCount;
+    
     if (existing.length === 0) {
-      // Create new reaction type
+      // Create new reaction
+      if (action === 'remove') {
+        return res.json({ success: true, count: 0, emoji });
+      }
+      
       await db.promise().query(
         "INSERT INTO gossip_reactions (gossip_id, emoji, count) VALUES (?, ?, 1)",
-        [req.params.id, emoji]
+        [gossipId, emoji]
       );
+      newCount = 1;
     } else {
-      // Increment existing
+      const currentCount = existing[0].count;
+      
+      if (action === 'toggle') {
+        // Toggle between 0 and 1 (for like/unlike)
+        newCount = currentCount === 0 ? 1 : 0;
+      } else if (action === 'add') {
+        newCount = currentCount + 1;
+      } else { // remove
+        newCount = Math.max(0, currentCount - 1);
+      }
+      
       await db.promise().query(
-        "UPDATE gossip_reactions SET count = count + 1 WHERE gossip_id = ? AND emoji = ?",
-        [req.params.id, emoji]
+        "UPDATE gossip_reactions SET count = ? WHERE gossip_id = ? AND emoji = ?",
+        [newCount, gossipId, emoji]
       );
     }
 
-    // Get updated count
-    const [updated] = await db.promise().query(
-      "SELECT count FROM gossip_reactions WHERE gossip_id = ? AND emoji = ?",
-      [req.params.id, emoji]
+    // Get total reactions
+    const [[{ total }]] = await db.promise().query(
+      "SELECT SUM(count) as total FROM gossip_reactions WHERE gossip_id = ?",
+      [gossipId]
     );
+
+    // Broadcast reaction update
+    broadcastUpdate({
+      type: 'REACTION_UPDATE',
+      gossipId: gossipId,
+      emoji: emoji,
+      count: newCount || 0,
+      totalReactions: total || 0
+    });
 
     res.json({ 
       success: true, 
-      count: updated[0]?.count || 1,
-      emoji 
+      count: newCount || 0,
+      emoji,
+      totalReactions: total || 0
     });
+    
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to add reaction" });
+    console.error("Error in POST /gossips/:id/reactions:", err);
+    res.status(500).json({ error: "Failed to update reaction" });
   }
 });
 
@@ -402,14 +739,29 @@ app.get("/gossips/:id/reactions/total", async (req, res) => {
 app.post("/contact", async (req, res) => {
   try {
     const { name, email, message } = req.body;
+    
     if (!name || !email || !message) {
       return res.status(400).json({ error: "Please fill all fields" });
     }
 
+    // Basic validation
+    if (name.length > 100) {
+      return res.status(400).json({ error: "Name too long" });
+    }
+
+    if (!/\S+@\S+\.\S+/.test(email)) {
+      return res.status(400).json({ error: "Invalid email address" });
+    }
+
+    if (message.length > 1000) {
+      return res.status(400).json({ error: "Message too long" });
+    }
+
     const [result] = await db.promise().query(
       "INSERT INTO contact_us (name, email, message, created_at) VALUES (?, ?, ?, NOW())",
-      [name, email, message]
+      [name.trim(), email.trim(), message.trim()]
     );
+    
     res.json({ success: true, id: result.insertId });
   } catch (err) {
     console.error(err);
@@ -421,7 +773,7 @@ app.post("/contact", async (req, res) => {
 app.get("/admin/contact-messages", async (req, res) => {
   try {
     const [messages] = await db.promise().query(
-      "SELECT * FROM contact_us ORDER BY created_at DESC"
+      "SELECT * FROM contact_us ORDER BY created_at DESC LIMIT 100"
     );
     res.json(messages);
   } catch (err) {
@@ -433,20 +785,69 @@ app.get("/admin/contact-messages", async (req, res) => {
 // ===== STATISTICS =====
 app.get("/admin/stats", async (req, res) => {
   try {
-    const [gossipCount] = await db.promise().query("SELECT COUNT(*) as count FROM gossips");
-    const [commentCount] = await db.promise().query("SELECT COUNT(*) as count FROM gossip_comments");
-    const [reactionCount] = await db.promise().query("SELECT SUM(count) as total FROM gossip_reactions");
-    const [reportCount] = await db.promise().query("SELECT COUNT(*) as count FROM reported_gossips");
-
-    res.json({
-      gossips: gossipCount[0].count,
-      comments: commentCount[0].count,
-      reactions: reactionCount[0].total || 0,
-      reports: reportCount[0].count
-    });
+    // Use single query for better performance
+    const [stats] = await db.promise().query(`
+      SELECT 
+        (SELECT COUNT(*) FROM gossips) as gossips,
+        (SELECT COUNT(*) FROM gossip_comments) as comments,
+        (SELECT SUM(count) FROM gossip_reactions) as reactions,
+        (SELECT COUNT(*) FROM reported_gossips) as reports,
+        (SELECT COUNT(*) FROM contact_us) as contact_messages
+    `);
+    
+    res.json(stats[0]);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch statistics" });
+  }
+});
+
+// ===== HEALTH CHECK =====
+app.get("/health", (req, res) => {
+  res.json({ 
+    status: "healthy", 
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    websocketClients: clients.size
+  });
+});
+
+// ===== SEARCH =====
+app.get("/gossips/search", async (req, res) => {
+  try {
+    const query = req.query.q;
+    
+    if (!query || query.trim().length < 2) {
+      return res.status(400).json({ error: "Search query must be at least 2 characters" });
+    }
+    
+    const searchTerm = `%${query.trim()}%`;
+    
+    const [results] = await db.promise().query(`
+      SELECT 
+        g.*,
+        COALESCE(gr.total_reactions, 0) as total_reactions,
+        COALESCE(gc.comment_count, 0) as comment_count
+      FROM gossips g
+      LEFT JOIN (
+        SELECT gossip_id, SUM(count) as total_reactions 
+        FROM gossip_reactions 
+        GROUP BY gossip_id
+      ) gr ON g.id = gr.gossip_id
+      LEFT JOIN (
+        SELECT gossip_id, COUNT(*) as comment_count 
+        FROM gossip_comments 
+        GROUP BY gossip_id
+      ) gc ON g.id = gc.gossip_id
+      WHERE g.content LIKE ? OR g.diva_name LIKE ?
+      ORDER BY g.created_at DESC
+      LIMIT 50
+    `, [searchTerm, searchTerm]);
+    
+    res.json(results);
+  } catch (err) {
+    console.error("Search error:", err);
+    res.status(500).json({ error: "Search failed" });
   }
 });
 
@@ -458,8 +859,28 @@ app.use((req, res) => {
 // ===== ERROR HANDLER =====
 app.use((err, req, res, next) => {
   console.error(err.stack);
+  
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ error: "File too large (max 10MB)" });
+    }
+  }
+  
   res.status(500).json({ error: "Something went wrong!" });
 });
 
 // ===== START SERVER =====
-app.listen(PORT, () => console.log(`💖 Server running on port ${PORT}`));
+server.listen(PORT, () => {
+  console.log(`💖 Server running on port ${PORT}`);
+  console.log(`📡 WebSocket server ready for real-time updates`);
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received. Closing server...');
+  wss.close();
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
+});
