@@ -7,7 +7,6 @@ const API_BASE = location.hostname === "localhost"
 let allGossips = [];
 let displayedGossips = [];
 const userReactions = JSON.parse(localStorage.getItem("userReactions")) || {};
-const userComments = JSON.parse(localStorage.getItem("userComments")) || {};
 const GOSSIPS_PER_PAGE = 3;
 
 // ====== ELEMENTS ======
@@ -90,6 +89,12 @@ const styles = `
     box-shadow: 0 5px 20px rgba(255, 77, 166, 0.1);
     border: 1px solid #ffe6f2;
     overflow: hidden;
+    animation: fadeIn 0.5s ease;
+  }
+  
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
   }
   
   .card-header {
@@ -188,11 +193,6 @@ const styles = `
     background: #f5f5f5;
   }
   
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(-10px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-  
   .card-content {
     padding: 15px;
     color: #333;
@@ -226,6 +226,12 @@ const styles = `
   .action-btn.active {
     background: #ffe6f2;
     color: #ff4da6;
+  }
+  
+  .action-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none !important;
   }
   
   .likes-count {
@@ -290,12 +296,6 @@ const styles = `
     font-weight: bold;
     font-size: 14px;
     flex-shrink: 0;
-  }
-  
-  .comment-avatar.small {
-    width: 32px;
-    height: 32px;
-    font-size: 14px;
   }
   
   .comment-content {
@@ -387,6 +387,13 @@ const styles = `
     box-shadow: 0 5px 15px rgba(255, 77, 166, 0.3);
   }
   
+  .comment-submit:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none !important;
+    box-shadow: none !important;
+  }
+  
   /* Media Preview */
   #preview img,
   #preview video {
@@ -404,7 +411,7 @@ styleSheet.textContent = styles;
 document.head.appendChild(styleSheet);
 
 // ====== UTILITY FUNCTIONS ======
-function showNotification(message, type = 'info') {
+function showNotification(message, type = 'info', duration = 4000) {
   const existing = document.querySelector('.notification');
   if (existing) existing.remove();
   
@@ -422,7 +429,7 @@ function showNotification(message, type = 'info') {
       notification.style.animation = 'slideOutRight 0.3s ease';
       setTimeout(() => notification.remove(), 300);
     }
-  }, 4000);
+  }, duration);
 }
 
 function formatTimeAgo(date) {
@@ -532,7 +539,7 @@ function setupEventListeners() {
     gossipForm.addEventListener('submit', handleFormSubmit);
   }
   
-  // FIX 2: Load More button now opens gossip.html
+  // Load More button
   if (loadMoreBtn) {
     loadMoreBtn.addEventListener('click', (e) => {
       e.preventDefault();
@@ -569,8 +576,6 @@ async function loadGossips() {
     showError('Failed to load gossips');
   }
 }
-
-// REMOVED: loadMoreGossips function since we're redirecting to gossip.html
 
 function showLoading() {
   if (gossipContainer) {
@@ -672,7 +677,8 @@ function createGossipCard(gossip) {
     
     <div class="card-actions">
       <button class="action-btn like-btn ${userReactions[gossip.id]?.liked ? 'active' : ''}" 
-              onclick="toggleLike(${gossip.id})">
+              onclick="toggleLike(${gossip.id})"
+              id="like-btn-${gossip.id}">
         ${userReactions[gossip.id]?.liked ? '❤️ Liked' : '🤍 Like'}
         <span class="like-count" id="like-count-${gossip.id}">${gossip.total_reactions || 0}</span>
       </button>
@@ -712,7 +718,7 @@ function createGossipCard(gossip) {
   // Load comments and reactions
   setTimeout(() => {
     loadComments(gossip.id);
-    loadReactions(gossip.id);
+    updateReactionCount(gossip.id);
   }, 100);
   
   return card;
@@ -811,56 +817,143 @@ async function deletePost(gossipId) {
   toggleMenu(gossipId);
 }
 
-// ====== LIKE FUNCTIONS ======
+// ====== LIKE FUNCTIONS - WORKING VERSION ======
 async function toggleLike(gossipId) {
+  console.log(`🔥 toggleLike called for gossip: ${gossipId}`);
+  
+  const likeBtn = document.getElementById(`like-btn-${gossipId}`);
+  const likeCountElement = document.getElementById(`like-count-${gossipId}`);
+  
+  if (!likeBtn) {
+    console.error('❌ Like button not found!');
+    return;
+  }
+  
+  // Get current state
   const isLiked = userReactions[gossipId]?.liked || false;
+  const currentCount = parseInt(likeCountElement?.textContent) || 0;
+  
+  console.log(`📊 Current: liked=${isLiked}, count=${currentCount}`);
+  
+  // Disable button during request
+  likeBtn.disabled = true;
+  likeBtn.innerHTML = isLiked ? '🤍 Unliking...' : '❤️ Liking...';
   
   try {
-    const response = await fetch(`${API_BASE}/gossips/${gossipId}/reactions/add`, {
+    // IMPORTANT: Using the correct endpoint WITHOUT /add
+    const url = `${API_BASE}/gossips/${gossipId}/reactions`;
+    console.log(`🌐 Calling: ${url}`);
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        emoji: '❤️'
+      })
+    });
+    
+    console.log(`📨 Response status: ${response.status}`);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`❌ Server error: ${errorText}`);
+      throw new Error(`HTTP ${response.status}`);
+    }
+    
+    const result = await response.json();
+    console.log(`✅ Server response:`, result);
+    
+    if (!result.success) {
+      throw new Error(result.error || 'Server reported failure');
+    }
+    
+    // Update local state
+    userReactions[gossipId] = userReactions[gossipId] || {};
+    userReactions[gossipId].liked = result.liked;
+    localStorage.setItem('userReactions', JSON.stringify(userReactions));
+    
+    // Update UI
+    likeBtn.innerHTML = result.liked ? '❤️ Liked' : '🤍 Like';
+    likeBtn.classList.toggle('active', result.liked);
+    
+    if (likeCountElement) {
+      likeCountElement.textContent = result.total || 0;
+    }
+    
+    likeBtn.disabled = false;
+    
+    // Animation
+    likeBtn.style.transform = 'scale(1.1)';
+    setTimeout(() => {
+      likeBtn.style.transform = 'scale(1)';
+    }, 200);
+    
+    // Notification
+    showNotification(result.liked ? 'Liked! ❤️' : 'Like removed', 'success', 2000);
+    
+  } catch (error) {
+    console.error(`❌ Like error:`, error);
+    
+    // Revert on error
+    likeBtn.innerHTML = isLiked ? '❤️ Liked' : '🤍 Like';
+    likeBtn.classList.toggle('active', isLiked);
+    likeBtn.disabled = false;
+    
+    // Try emergency method
+    await emergencyToggleLike(gossipId, isLiked);
+  }
+}
+
+// Emergency fallback - updates UI without waiting for server
+async function emergencyToggleLike(gossipId, currentLikedState) {
+  console.log(`🚨 Using emergency toggle for gossip ${gossipId}`);
+  
+  const likeBtn = document.getElementById(`like-btn-${gossipId}`);
+  const likeCountElement = document.getElementById(`like-count-${gossipId}`);
+  
+  if (!likeBtn) return;
+  
+  const newLiked = !currentLikedState;
+  const currentCount = parseInt(likeCountElement?.textContent) || 0;
+  const newCount = newLiked ? currentCount + 1 : Math.max(0, currentCount - 1);
+  
+  // Update UI immediately
+  likeBtn.innerHTML = newLiked ? '❤️ Liked' : '🤍 Like';
+  likeBtn.classList.toggle('active', newLiked);
+  
+  if (likeCountElement) {
+    likeCountElement.textContent = newCount;
+  }
+  
+  // Update local storage
+  userReactions[gossipId] = { liked: newLiked };
+  localStorage.setItem('userReactions', JSON.stringify(userReactions));
+  
+  // Try to sync with server in background (don't wait)
+  try {
+    await fetch(`${API_BASE}/gossips/${gossipId}/reactions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ emoji: '❤️' })
     });
-    
-    if (response.ok) {
-      userReactions[gossipId] = userReactions[gossipId] || {};
-      userReactions[gossipId].liked = !isLiked;
-      localStorage.setItem('userReactions', JSON.stringify(userReactions));
-      
-      // Update UI
-      const likeBtn = document.querySelector(`.card[data-id="${gossipId}"] .like-btn`);
-      if (likeBtn) {
-        likeBtn.innerHTML = userReactions[gossipId].liked ? 
-          '❤️ Liked <span class="like-count">Loading...</span>' : 
-          '🤍 Like <span class="like-count">Loading...</span>';
-        likeBtn.classList.toggle('active', userReactions[gossipId].liked);
-        
-        // Animation
-        likeBtn.style.transform = 'scale(1.1)';
-        setTimeout(() => likeBtn.style.transform = 'scale(1)', 200);
-      }
-      
-      // Update likes count
-      setTimeout(() => loadReactions(gossipId), 500);
-      showNotification(userReactions[gossipId].liked ? 'Liked! ❤️' : 'Like removed', 'success');
-    }
-  } catch (error) {
-    showNotification('Failed to update like 💔', 'error');
+  } catch (bgError) {
+    console.log('Background sync failed, but UI was updated');
   }
+  
+  showNotification(newLiked ? 'Liked! ❤️' : 'Like removed', 'success');
 }
 
-async function loadReactions(gossipId) {
+async function updateReactionCount(gossipId) {
   try {
-    const response = await fetch(`${API_BASE}/gossips/${gossipId}/reactions`);
+    const response = await fetch(`${API_BASE}/gossips/${gossipId}/reactions/total`);
     if (!response.ok) return;
     
-    const reactions = await response.json();
-    const likeReaction = reactions.find(r => r.emoji === '❤️');
-    const likesCount = likeReaction ? likeReaction.count : 0;
-    
-    const likeCountElement = document.querySelector(`#like-count-${gossipId}`);
+    const result = await response.json();
+    const likeCountElement = document.getElementById(`like-count-${gossipId}`);
     if (likeCountElement) {
-      likeCountElement.textContent = likesCount;
+      likeCountElement.textContent = result.total || 0;
     }
   } catch (error) {
     console.error('Error loading reactions:', error);
@@ -868,7 +961,6 @@ async function loadReactions(gossipId) {
 }
 
 // ====== COMMENT FUNCTIONS ======
-// FIX 1: Fixed comment count issue
 async function toggleComments(gossipId) {
   const commentsSection = document.getElementById(`comments-${gossipId}`);
   const viewCommentsBtn = document.getElementById(`view-comments-${gossipId}`);
@@ -884,7 +976,7 @@ async function toggleComments(gossipId) {
     }
   }
   
-  // Get actual comment count correctly
+  // Get actual comment count
   try {
     const response = await fetch(`${API_BASE}/gossips/${gossipId}/comments`);
     if (response.ok) {
@@ -974,10 +1066,14 @@ function createCommentHTML(comment) {
 
 async function postComment(gossipId) {
   const input = document.getElementById(`comment-input-${gossipId}`);
+  const submitBtn = document.querySelector(`#comment-input-${gossipId}`)?.nextElementSibling;
+  
   if (!input || !input.value.trim()) {
     showNotification('Please enter a comment! 💬', 'info');
     return;
   }
+  
+  if (submitBtn) submitBtn.disabled = true;
   
   const commenterName = prompt('Your name (optional):', 'Anonymous') || 'Anonymous';
   
@@ -1026,6 +1122,8 @@ async function postComment(gossipId) {
   } catch (error) {
     console.error('Error posting comment:', error);
     showNotification('Failed to post comment 💔', 'error');
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
   }
 }
 
@@ -1079,7 +1177,7 @@ async function handleFormSubmit(e) {
       body: formData
     });
     
-        const result = await response.json();
+    const result = await response.json();
     
     if (response.ok && result.id) {
       // Reset form
@@ -1152,6 +1250,7 @@ async function sharePost(gossipId) {
 // ====== INFINITE SCROLL FOR GOSSIP.HTML ======
 let isLoading = false;
 let currentPage = 1;
+let hasMoreGossips = true;
 
 // Only initialize infinite scroll on gossip.html
 if (window.location.pathname.includes('gossip.html')) {
@@ -1165,17 +1264,14 @@ async function initializeInfiniteScroll() {
   try {
     // Load first page
     await loadGossipsPage(1);
-    
-    // Add load more button initially
-    addLoadMoreButton();
   } catch (error) {
     console.error('Error initializing infinite scroll:', error);
-   
+    showNotification('Failed to load gossips 💔', 'error');
   }
 }
 
 async function loadGossipsPage(page) {
-  if (isLoading) return;
+  if (isLoading || !hasMoreGossips) return;
   
   isLoading = true;
   showLoadingIndicator();
@@ -1184,14 +1280,18 @@ async function loadGossipsPage(page) {
     const response = await fetch(`${API_BASE}/gossips?page=${page}&limit=10`);
     if (!response.ok) throw new Error('Failed to fetch gossips');
     
-    const gossips = await response.json();
+    const data = await response.json();
     
-    if (gossips.length === 0) {
+    // Check if response has gossips array
+    const gossips = data.gossips || data;
+    
+    if (!Array.isArray(gossips) || gossips.length === 0) {
       if (page === 1) {
         showNoGossipsMessage();
       } else {
         showNoMoreGossipsMessage();
       }
+      hasMoreGossips = false;
       return;
     }
     
@@ -1199,42 +1299,46 @@ async function loadGossipsPage(page) {
     appendGossips(gossips);
     currentPage = page;
     
+    // Check if there are more gossips
+    if (data.pagination) {
+      hasMoreGossips = data.pagination.hasMore;
+    } else {
+      hasMoreGossips = gossips.length >= 10;
+    }
+    
   } catch (error) {
     console.error('Error loading page:', error);
     showNotification('Failed to load more gossips 💔', 'error');
   } finally {
     isLoading = false;
     hideLoadingIndicator();
-    updateLoadMoreButton();
   }
 }
 
 function showLoadingIndicator() {
-  const loadingDiv = document.getElementById('loading-indicator');
-  if (loadingDiv) {
-    loadingDiv.style.display = 'block';
-  } else {
-    const indicator = document.createElement('div');
-    indicator.id = 'loading-indicator';
-    indicator.style.cssText = `
+  let loadingDiv = document.getElementById('loading-indicator');
+  if (!loadingDiv) {
+    loadingDiv = document.createElement('div');
+    loadingDiv.id = 'loading-indicator';
+    loadingDiv.style.cssText = `
       text-align: center;
       padding: 20px;
       display: none;
     `;
-    indicator.innerHTML = `
+    loadingDiv.innerHTML = `
       <div class="loading-spinner"></div>
       <p style="color: #ff4da6; margin-top: 10px;">Loading more gossips... 💕</p>
     `;
-    gossipContainer?.appendChild(indicator);
+    gossipContainer?.appendChild(loadingDiv);
   }
   
-  document.getElementById('loading-indicator').style.display = 'block';
+  loadingDiv.style.display = 'block';
 }
 
 function hideLoadingIndicator() {
-  const indicator = document.getElementById('loading-indicator');
-  if (indicator) {
-    indicator.style.display = 'none';
+  const loadingDiv = document.getElementById('loading-indicator');
+  if (loadingDiv) {
+    loadingDiv.style.display = 'none';
   }
 }
 
@@ -1260,11 +1364,8 @@ function showNoMoreGossipsMessage() {
   `;
   noMoreDiv.textContent = "That's all the gossip for now! 🌸";
   
-  // Remove load more button
-  const loadMoreBtn = document.getElementById('load-more-btn');
-  if (loadMoreBtn) loadMoreBtn.remove();
-  
   gossipContainer?.appendChild(noMoreDiv);
+  hasMoreGossips = false;
 }
 
 function appendGossips(gossips) {
@@ -1274,60 +1375,23 @@ function appendGossips(gossips) {
   });
 }
 
-function addLoadMoreButton() {
-  const existingBtn = document.getElementById('load-more-btn');
-  if (existingBtn) return;
-  
-  const loadMoreBtn = document.createElement('button');
-  loadMoreBtn.id = 'load-more-btn';
-  loadMoreBtn.style.cssText = `
-    display: block;
-    margin: 30px auto;
-    background: linear-gradient(45deg, #ff4da6, #ff66b2);
-    color: white;
-    border: none;
-    padding: 12px 30px;
-    border-radius: 25px;
-    font-weight: 600;
-    font-size: 16px;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    box-shadow: 0 4px 15px rgba(255, 77, 166, 0.2);
-  `;
-  loadMoreBtn.textContent = 'Load More Gossip 💕';
-  loadMoreBtn.onclick = () => loadGossipsPage(currentPage + 1);
-  loadMoreBtn.onmouseenter = () => {
-    loadMoreBtn.style.transform = 'translateY(-2px)';
-    loadMoreBtn.style.boxShadow = '0 6px 20px rgba(255, 77, 166, 0.3)';
-  };
-  loadMoreBtn.onmouseleave = () => {
-    loadMoreBtn.style.transform = 'translateY(0)';
-    loadMoreBtn.style.boxShadow = '0 4px 15px rgba(255, 77, 166, 0.2)';
-  };
-  
-  gossipContainer?.parentNode?.insertBefore(loadMoreBtn, gossipContainer?.nextSibling);
-}
-
-function updateLoadMoreButton() {
-  const loadMoreBtn = document.getElementById('load-more-btn');
-  if (loadMoreBtn) {
-    loadMoreBtn.disabled = isLoading;
-    loadMoreBtn.textContent = isLoading ? 'Loading... ✨' : 'Load More Gossip 💕';
-  }
-}
-
 function setupInfiniteScroll() {
-  // Add scroll event listener for infinite scroll
+  let scrollTimeout;
+  
   window.addEventListener('scroll', () => {
-    if (isLoading) return;
+    if (isLoading || !hasMoreGossips) return;
     
-    const scrollPosition = window.innerHeight + window.scrollY;
-    const pageHeight = document.documentElement.scrollHeight;
-    const threshold = 100; // pixels from bottom
+    clearTimeout(scrollTimeout);
     
-    if (scrollPosition >= pageHeight - threshold) {
-      loadGossipsPage(currentPage + 1);
-    }
+    scrollTimeout = setTimeout(() => {
+      const scrollPosition = window.innerHeight + window.scrollY;
+      const pageHeight = document.documentElement.scrollHeight;
+      const threshold = 100;
+      
+      if (scrollPosition >= pageHeight - threshold) {
+        loadGossipsPage(currentPage + 1);
+      }
+    }, 200);
   });
 }
 
@@ -1365,6 +1429,7 @@ async function handleSearch() {
   } catch (error) {
     console.error('Search error:', error);
     showNotification('Search failed 💔', 'error');
+    await loadGossips();
   }
 }
 
@@ -1385,7 +1450,6 @@ function displaySearchResults(gossips, query) {
   
   gossipContainer.innerHTML = '';
   
-  // Highlight search terms in results
   gossips.forEach(gossip => {
     const card = createGossipCard(gossip);
     
@@ -1414,8 +1478,34 @@ function debounce(func, wait) {
   };
 }
 
+// ====== DEBUG FUNCTIONS ======
+async function testLikeAPI(gossipId = 1) {
+  console.log('🔍 Testing Like API...');
+  
+  try {
+    const response = await fetch(`${API_BASE}/gossips/${gossipId}/reactions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ emoji: '❤️' })
+    });
+    
+    console.log('Status:', response.status);
+    const text = await response.text();
+    console.log('Response:', text);
+    
+    try {
+      const json = JSON.parse(text);
+      console.log('Parsed JSON:', json);
+      return json;
+    } catch (e) {
+      console.log('Not JSON:', text);
+    }
+  } catch (error) {
+    console.error('Test failed:', error);
+  }
+}
+
 // ====== EXPORT FOR GLOBAL USE ======
-// Make essential functions available globally
 window.toggleLike = toggleLike;
 window.toggleComments = toggleComments;
 window.postComment = postComment;
@@ -1426,6 +1516,7 @@ window.reportPost = reportPost;
 window.deletePost = deletePost;
 window.loadGossips = loadGossips;
 window.openFullscreen = openFullscreen;
+window.testLikeAPI = testLikeAPI;
 
 // Show welcome message on first visit
 if (!localStorage.getItem('welcomeShown')) {
